@@ -4,6 +4,7 @@ import com.hlsl.psi.HlslTokenTypes;
 import com.intellij.lexer.Lexer;
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors;
 import com.intellij.openapi.editor.HighlighterColors;
+import com.intellij.ui.JBColor;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileTypes.SyntaxHighlighterBase;
@@ -18,20 +19,46 @@ import static com.intellij.openapi.editor.colors.TextAttributesKey.createTextAtt
 
 public class HlslSyntaxHighlighter extends SyntaxHighlighterBase {
 
+    // The keys below carry their own colours instead of inheriting a scheme key: the platform defines no
+    // colour for function calls at all, and the ones for class names and local variables are the plain text
+    // colour in Darcula, which left a shader's own functions, structs and variables looking unhighlighted.
+    // JBColor picks the light or the dark value for the active theme, so this also works in custom themes,
+    // and every colour stays adjustable under Settings → Editor → Color Scheme → HLSL.
+    private static final int LIGHT_TYPE = 0x0E7C6B;
+    private static final int LIGHT_FUNCTION = 0x00627A;
+    private static final int LIGHT_FIELD = 0x871094;
+    private static final int LIGHT_VARIABLE = 0x1B5E9C;
+    private static final int LIGHT_SEMANTIC = 0x9E880D;
+    private static final int DARK_TYPE = 0x4EC9B0;
+    private static final int DARK_FUNCTION = 0xFFC66D;
+    private static final int DARK_FIELD = 0xC77DBB;
+    private static final int DARK_VARIABLE = 0x9CDCFE;
+    private static final int DARK_SEMANTIC = 0xB5CEA8;
+
+    private static TextAttributesKey coloured(String name, int light, int dark) {
+        return createTextAttributesKey(name, attributes(light, dark, Font.PLAIN));
+    }
+
+    /** Intrinsics are set in italics, which reads as "built in" without needing a second hue. */
+    private static TextAttributesKey colouredItalic(String name, int light, int dark) {
+        return createTextAttributesKey(name, attributes(light, dark, Font.ITALIC));
+    }
+
+    private static TextAttributes attributes(int light, int dark, int fontType) {
+        return new TextAttributes(new JBColor(light, dark), null, null, null, fontType);
+    }
+
     public static final TextAttributesKey KEYWORD =
             createTextAttributesKey("HLSL_KEYWORD", DefaultLanguageHighlighterColors.KEYWORD);
-    public static final TextAttributesKey TYPE_KEYWORD =
-            createTextAttributesKey("HLSL_TYPE", DefaultLanguageHighlighterColors.CLASS_NAME);
+    public static final TextAttributesKey TYPE_KEYWORD = coloured("HLSL_TYPE", LIGHT_TYPE, DARK_TYPE);
     public static final TextAttributesKey BUILTIN_FUNCTION =
-            createTextAttributesKey("HLSL_BUILTIN_FUNCTION", DefaultLanguageHighlighterColors.STATIC_METHOD);
+            colouredItalic("HLSL_BUILTIN_FUNCTION", LIGHT_FUNCTION, DARK_FUNCTION);
     public static final TextAttributesKey FUNCTION_CALL =
-            createTextAttributesKey("HLSL_FUNCTION_CALL", DefaultLanguageHighlighterColors.FUNCTION_CALL);
+            coloured("HLSL_FUNCTION_CALL", LIGHT_FUNCTION, DARK_FUNCTION);
     public static final TextAttributesKey INSTANCE_METHOD_CALL =
-            createTextAttributesKey("HLSL_INSTANCE_METHOD_CALL", DefaultLanguageHighlighterColors.INSTANCE_METHOD);
-    public static final TextAttributesKey FIELD_ACCESS =
-            createTextAttributesKey("HLSL_FIELD_ACCESS", DefaultLanguageHighlighterColors.INSTANCE_FIELD);
-    public static final TextAttributesKey SEMANTIC =
-            createTextAttributesKey("HLSL_SEMANTIC", DefaultLanguageHighlighterColors.METADATA);
+            coloured("HLSL_INSTANCE_METHOD_CALL", LIGHT_FUNCTION, DARK_FUNCTION);
+    public static final TextAttributesKey FIELD_ACCESS = coloured("HLSL_FIELD_ACCESS", LIGHT_FIELD, DARK_FIELD);
+    public static final TextAttributesKey SEMANTIC = coloured("HLSL_SEMANTIC", LIGHT_SEMANTIC, DARK_SEMANTIC);
     public static final TextAttributesKey PREPROCESSOR =
             createTextAttributesKey("HLSL_PREPROCESSOR", DefaultLanguageHighlighterColors.METADATA);
     public static final TextAttributesKey NUMBER =
@@ -56,10 +83,8 @@ public class HlslSyntaxHighlighter extends SyntaxHighlighterBase {
             createTextAttributesKey("HLSL_BRACE", DefaultLanguageHighlighterColors.BRACES);
     public static final TextAttributesKey BRACKET =
             createTextAttributesKey("HLSL_BRACKET", DefaultLanguageHighlighterColors.BRACKETS);
-    public static final TextAttributesKey STRUCT_NAME =
-            createTextAttributesKey("HLSL_STRUCT_NAME", DefaultLanguageHighlighterColors.CLASS_NAME);
-    public static final TextAttributesKey IDENTIFIER =
-            createTextAttributesKey("HLSL_IDENTIFIER", DefaultLanguageHighlighterColors.LOCAL_VARIABLE);
+    public static final TextAttributesKey STRUCT_NAME = coloured("HLSL_STRUCT_NAME", LIGHT_TYPE, DARK_TYPE);
+    public static final TextAttributesKey IDENTIFIER = coloured("HLSL_IDENTIFIER", LIGHT_VARIABLE, DARK_VARIABLE);
     public static final TextAttributesKey BAD_CHARACTER =
             createTextAttributesKey("HLSL_BAD_CHARACTER", HighlighterColors.BAD_CHARACTER);
 
