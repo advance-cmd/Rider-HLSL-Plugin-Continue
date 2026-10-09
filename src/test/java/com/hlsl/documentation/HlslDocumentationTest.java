@@ -113,6 +113,16 @@ public class HlslDocumentationTest extends BasePlatformTestCase {
         assertNull(HlslDocumentationLookup.nameAt(text, text.indexOf(';')));
     }
 
+    public void testCustomDocumentationElementIsOfferedForAHoveredCall() throws IOException {
+        myFixture.addFileToProject("LightingUtil.hlsl", load("LightingUtil.hlsl"));
+        String text = "#include \"LightingUtil.hlsl\"\nfloat3 c = ApplyFog(color, dist, fog, start, range);\n";
+        myFixture.configureByText("Deferred.hlsl", text);
+        PsiElement element = new HlslDocumentationProvider().getCustomDocumentationElement(
+                myFixture.getEditor(), myFixture.getFile(), null, text.indexOf("ApplyFog") + 2);
+        assertNotNull("the platform must be told which element to document", element);
+        assertEquals("ApplyFog", element.getText());
+    }
+
     private static String load(String name) throws IOException {
         try (InputStream in = HlslDocumentationTest.class.getResourceAsStream("/dx12/" + name)) {
             assertNotNull("missing test resource: /dx12/" + name, in);
