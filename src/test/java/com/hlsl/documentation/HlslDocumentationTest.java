@@ -1,6 +1,8 @@
 package com.hlsl.documentation;
 
 import com.hlsl.completion.HlslCompletionAnalysis;
+import com.intellij.platform.backend.documentation.DocumentationTarget;
+import com.intellij.platform.backend.documentation.PsiDocumentationTargetProvider;
 import com.intellij.psi.PsiElement;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
@@ -73,6 +75,42 @@ public class HlslDocumentationTest extends BasePlatformTestCase {
         assertNotNull(element);
         assertNull("a keyword has no declaration to show",
                 new HlslDocumentationProvider().generateHoverDoc(element, element));
+    }
+
+    /**
+     * Hover and Ctrl+Q resolve documentation through the providers the platform has registered, so the test
+     * has to go through that registry. Calling the provider class directly hid a missing registration once.
+     */
+    public void testPlatformResolvesHoverThroughARegisteredTargetProvider() throws IOException {
+        myFixture.addFileToProject("LightingUtil.hlsl", load("LightingUtil.hlsl"));
+        String text = "#include \"LightingUtil.hlsl\"\nfloat3 c = ApplyFog(color, dist, fog, start, range);\n";
+        myFixture.configureByText("Deferred.hlsl", text);
+        // Hovering anywhere inside the word must work: the identifier is read from the document.
+        PsiElement element = myFixture.getFile().findElementAt(text.indexOf("ApplyFog") + 3);
+        assertNotNull(element);
+
+        DocumentationTarget target = null;
+        for (PsiDocumentationTargetProvider provider : PsiDocumentationTargetProvider.EP_NAME.getExtensionList()) {
+            target = provider.documentationTarget(element, element);
+            if (target != null) break;
+        }
+        assertNotNull("no registered documentation target provider knows this call", target);
+        assertNotNull("the target would not be navigable", target.createPointer().dereference());
+        assertNotNull("the presentation is missing", target.computePresentation());
+
+        String hint = target.computeDocumentationHint();
+        assertNotNull("hover would show nothing", hint);
+        assertTrue(hint, hint.contains(
+                "ApplyFog(float3 color, float distToEye, float4 fogColor, float fogStart, float fogRange)"));
+        assertTrue("the comment above the declaration is included: " + hint, hint.contains("线性雾"));
+        assertNotNull("Ctrl+Q would show nothing", target.computeDocumentation());
+    }
+
+    public void testWordsAreReadFromTheDocumentAtTheOffset() {
+        String text = "float3 c = ApplyFog(color);";
+        assertEquals("ApplyFog", HlslDocumentationLookup.nameAt(text, text.indexOf("ApplyFog") + 4));
+        assertEquals("color", HlslDocumentationLookup.nameAt(text, text.indexOf("color")));
+        assertNull(HlslDocumentationLookup.nameAt(text, text.indexOf(';')));
     }
 
     private static String load(String name) throws IOException {

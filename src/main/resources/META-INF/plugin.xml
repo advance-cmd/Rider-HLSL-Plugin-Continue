@@ -55,6 +55,9 @@
                 language="HLSL"
                 implementationClass="com.hlsl.documentation.HlslDocumentationProvider"/>
 
+        <platform.backend.documentation.psiTargetProvider
+                implementation="com.hlsl.documentation.HlslDocumentationTargetProvider"/>
+
         <liveTemplateContext implementation="com.hlsl.templates.HlslTemplateContextType"/>
 
         <defaultLiveTemplatesProvider implementation="com.hlsl.templates.HlslLiveTemplatesProvider"/>
