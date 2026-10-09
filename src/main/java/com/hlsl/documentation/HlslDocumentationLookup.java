@@ -13,7 +13,6 @@ import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 /** Shared resolution and rendering for the documentation entry points the platform can call. */
@@ -21,25 +20,8 @@ final class HlslDocumentationLookup {
 
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final Logger LOG = Logger.getInstance(HlslDocumentationLookup.class);
-    /** When the platform last asked for documentation, so the plugin's own tooltip stays quiet then. */
-    private static volatile long lastAnsweredNanos;
 
     private HlslDocumentationLookup() { }
-
-    /** The declaration of the identifier at an offset, used by the plugin's own hover tooltip. */
-    static @Nullable HlslCompletionAnalysis.Declaration declarationAt(PsiFile file, CharSequence text, int offset) {
-        String name = nameAt(text, offset);
-        if (name == null) return null;
-        return HlslCompletionAnalysis.declarationOf(name, text, offset, includeSources(file));
-    }
-
-    /**
-     * True when the platform asked for documentation moments ago, which means its own hover tooltip works and
-     * a second one from this plugin would only be duplicated.
-     */
-    static boolean answeredRecently() {
-        return System.nanoTime() - lastAnsweredNanos < TimeUnit.SECONDS.toNanos(3);
-    }
 
     /**
      * The declaration of the symbol the element points at, following the include chain.
@@ -78,7 +60,6 @@ final class HlslDocumentationLookup {
                 HlslCompletionAnalysis.declarationOf(name, text, offset, includeSources(file));
         log(entry, file.getName() + ":" + offset + " '" + name + "'",
                 declaration == null ? "not resolved" : declaration.kind() + " " + firstLine(declaration.text()));
-        if (declaration != null) lastAnsweredNanos = System.nanoTime();
         return declaration;
     }
 
@@ -131,7 +112,7 @@ final class HlslDocumentationLookup {
 
     /** Records which platform entry point asked for documentation, and what it got. */
     static void log(String entry, Object request, Object outcome) {
-        LOG.info("HLSL documentation [" + entry + "] " + request + " -> " + outcome);
+        LOG.debug("HLSL documentation [" + entry + "] " + request + " -> " + outcome);
     }
 
     private static String firstLine(String text) {

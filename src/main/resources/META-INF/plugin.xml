@@ -58,7 +58,12 @@
         <platform.backend.documentation.psiTargetProvider
                 implementation="com.hlsl.documentation.HlslDocumentationTargetProvider"/>
 
-        <editorFactoryListener implementation="com.hlsl.documentation.HlslHoverTooltipRegistrar"/>
+        <!-- Function calls, method calls and field accesses have no colours in the bundled schemes, so a
+             shader's own functions looked like plain text while built-ins were coloured. -->
+        <additionalTextAttributes scheme="Default" file="colorSchemes/HLSLDefault.xml"/>
+        <additionalTextAttributes scheme="IntelliJ Light" file="colorSchemes/HLSLDefault.xml"/>
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/HLSLDarcula.xml"/>
+        <additionalTextAttributes scheme="High contrast" file="colorSchemes/HLSLDarcula.xml"/>
 
         <liveTemplateContext implementation="com.hlsl.templates.HlslTemplateContextType"/>
 

@@ -128,12 +128,14 @@ public class HlslDocumentationTest extends BasePlatformTestCase {
         String text = "#include \"LightingUtil.hlsl\"\nfloat3 c = ApplyFog(color, dist, fog, start, range);\n";
         myFixture.configureByText("Deferred.hlsl", text);
         CharSequence source = myFixture.getEditor().getDocument().getImmutableCharSequence();
+        int offset = text.indexOf("ApplyFog") + 1;
+        String name = HlslDocumentationLookup.nameAt(source, offset);
+        assertEquals("ApplyFog", name);
         HlslCompletionAnalysis.Declaration declaration =
-                HlslDocumentationLookup.declarationAt(myFixture.getFile(), source, text.indexOf("ApplyFog") + 1);
+                HlslCompletionAnalysis.declarationOf(name, source, offset, List.of(load("LightingUtil.hlsl")));
         assertNotNull("the word under the mouse must resolve", declaration);
         assertEquals("ApplyFog", declaration.name());
-        assertNull("empty space resolves to nothing",
-                HlslDocumentationLookup.declarationAt(myFixture.getFile(), source, text.indexOf('\n')));
+        assertNull("empty space resolves to nothing", HlslDocumentationLookup.nameAt(source, text.indexOf('\n')));
         assertTrue("the tooltip text carries the signature and the comment",
                 HlslDocumentationLookup.plainText(declaration).contains("ApplyFog(float3 color")
                         && HlslDocumentationLookup.plainText(declaration).contains("线性雾"));

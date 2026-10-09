@@ -8,7 +8,7 @@ Syntax highlighting, code insight, DXC validation and clang-format for HLSL (Hig
 
 ### Editing
 
-- **Syntax highlighting** for keywords, types, built-in functions, semantics, preprocessor directives, numbers, strings, operators and comments
+- **Syntax highlighting** for keywords, types, built-in functions, **function calls, method calls and field accesses**, semantics, preprocessor directives, numbers, strings, operators and comments. The function/method/field colours ship with the plugin for the bundled light, Darcula and high-contrast schemes, because those keys have no colours in the IDE's own schemes — without them a shader's own helpers (`ApplyFog`) would look like plain text while built-ins (`saturate`) were coloured. Everything is adjustable under Settings → Editor → Color Scheme → HLSL
 - **Struct/class name highlighting** — `struct`, `cbuffer`, `tbuffer`, `class`, `interface`, `enum` names and `typedef` aliases are highlighted at the declaration and at every usage site, including names declared in transitively `#include`d files
 - **Code folding** — collapse any multi-line `{ ... }` block (functions, structs, cbuffers, control flow) and block comments, each region independent
 - **Line and block commenting** (`Ctrl+/`, `Ctrl+Shift+/`)
