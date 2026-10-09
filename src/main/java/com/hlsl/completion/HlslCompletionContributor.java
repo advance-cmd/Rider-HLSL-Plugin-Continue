@@ -2,6 +2,7 @@ package com.hlsl.completion;
 
 import com.hlsl.HlslLanguage;
 import com.hlsl.lexer.HlslLexer;
+import com.hlsl.parameterinfo.HlslParameterInfoHandler;
 import com.intellij.codeInsight.completion.CompletionContributor;
 import com.intellij.codeInsight.completion.CompletionParameters;
 import com.intellij.codeInsight.completion.CompletionProvider;
@@ -15,6 +16,10 @@ import com.intellij.codeInsight.completion.PrefixMatcher;
 import com.intellij.codeInsight.template.impl.TemplateImpl;
 import com.intellij.codeInsight.template.impl.TemplateSettings;
 import com.intellij.icons.AllIcons;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.project.Project;
 import com.intellij.patterns.PlatformPatterns;
 import com.intellij.psi.PsiFile;
 import com.intellij.util.ProcessingContext;
@@ -179,9 +184,23 @@ public class HlslCompletionContributor extends CompletionContributor {
         if (ctx.getCompletionChar() == '(') ctx.setAddCompletionChar(false);
         if (next < text.length() && text.charAt(next) == '(') {
             ctx.getEditor().getCaretModel().moveToOffset(next + 1);
-            return;
+        } else {
+            ctx.getDocument().insertString(offset, "()");
+            ctx.getEditor().getCaretModel().moveToOffset(offset + 1);
         }
-        ctx.getDocument().insertString(offset, "()");
-        ctx.getEditor().getCaretModel().moveToOffset(offset + 1);
+        showArgumentList(ctx);
     };
+
+    /**
+     * Completing a function name creates the argument list without typing a character, so the typed handler
+     * never sees it: the parameter popup has to be requested here, exactly as completing a Java method does.
+     */
+    private static void showArgumentList(InsertionContext ctx) {
+        Project project = ctx.getProject();
+        Editor editor = ctx.getEditor();
+        PsiFile file = ctx.getFile();
+        // The document is still being modified while the lookup finishes, so ask for the hint afterwards.
+        ApplicationManager.getApplication().invokeLater(
+                () -> HlslParameterInfoHandler.showAt(project, editor, file), ModalityState.current());
+    }
 }

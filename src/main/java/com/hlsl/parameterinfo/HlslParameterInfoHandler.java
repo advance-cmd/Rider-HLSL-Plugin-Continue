@@ -3,12 +3,15 @@ package com.hlsl.parameterinfo;
 import com.hlsl.HlslLanguage;
 import com.hlsl.completion.HlslCompletionAnalysis;
 import com.hlsl.completion.HlslIncludeIndex;
+import com.intellij.codeInsight.hint.ShowParameterInfoHandler;
 import com.intellij.lang.parameterInfo.CreateParameterInfoContext;
 import com.intellij.lang.parameterInfo.ParameterInfoContext;
 import com.intellij.lang.parameterInfo.ParameterInfoHandler;
 import com.intellij.lang.parameterInfo.ParameterInfoUIContext;
 import com.intellij.lang.parameterInfo.UpdateParameterInfoContext;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
@@ -84,6 +87,20 @@ public final class HlslParameterInfoHandler
     /** Several overloads can match one name, so the popup lets the user step through them. */
     @Override
     public boolean supportsOverloadSwitching() {
+        return true;
+    }
+
+    /**
+     * Shows the parameter popup at the caret. Both entry points — typing an argument list and completing a
+     * function name, which inserts the parentheses without typing a character — go through here, so the
+     * language guard and the platform call live in one place.
+     *
+     * @return true when the popup was requested
+     */
+    public static boolean showAt(@Nullable Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+        if (project == null || editor == null || editor.isDisposed() || file == null) return false;
+        if (file.getLanguage() != HlslLanguage.INSTANCE) return false;
+        ShowParameterInfoHandler.invoke(project, editor, file, editor.getCaretModel().getOffset(), null, false);
         return true;
     }
 

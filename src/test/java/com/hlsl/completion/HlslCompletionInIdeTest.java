@@ -121,6 +121,36 @@ public class HlslCompletionInIdeTest extends BasePlatformTestCase {
                 myFixture.getCaretOffset(), null, false);
     }
 
+    /**
+     * The reported gap: completing a function name inserts the parentheses without typing a character, so the
+     * typed handler never fires. The caret must end up inside the list with something to show there.
+     */
+    public void testCompletingAFunctionLeavesTheCaretInTheArgumentList() throws IOException {
+        addLightingUtil();
+        myFixture.configureByText("Deferred.hlsl",
+                "#include \"LightingUtil.hlsl\"\nfloat3 c = Apply<caret>;\n");
+        myFixture.completeBasic();
+        if (myFixture.getLookup() != null) myFixture.finishLookup('\n');
+        myFixture.checkResult("#include \"LightingUtil.hlsl\"\nfloat3 c = ApplyFog(<caret>);\n");
+
+        HlslIncludeIndex index = getProject().getService(HlslIncludeIndex.class);
+        List<CharSequence> includes = index.collectTransitiveSources(myFixture.getFile().getVirtualFile());
+        HlslCompletionAnalysis.CallInfo call = HlslCompletionAnalysis.callAt(
+                myFixture.getEditor().getDocument().getCharsSequence(), myFixture.getCaretOffset(), includes);
+        assertNotNull("the caret must end up inside the argument list", call);
+        assertEquals("ApplyFog", call.name());
+        assertEquals(5, call.signatures().get(0).parameters().size());
+    }
+
+    public void testParameterInfoIsRequestedOnlyForHlslFiles() throws IOException {
+        addLightingUtil();
+        myFixture.configureByText("Deferred.hlsl", "float3 c = ApplyFog(<caret>);");
+        assertTrue("inside an HLSL argument list the popup must be requested",
+                HlslParameterInfoHandler.showAt(getProject(), myFixture.getEditor(), myFixture.getFile()));
+        assertFalse("a missing file must be handled quietly",
+                HlslParameterInfoHandler.showAt(getProject(), myFixture.getEditor(), null));
+    }
+
     public void testLiveTemplateWiringIsDeclaredAndPackaged() throws IOException {
         String descriptor = readResource("/META-INF/plugin.xml");
         assertTrue("plugin.xml must register the HLSL template context type",
