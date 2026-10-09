@@ -25,6 +25,7 @@ Syntax highlighting, code insight, DXC validation and clang-format for HLSL (Hig
   - **method call chaining** — `gGBuffer0.Sample(s, uv).rgb` resolves through the return type
   - semantics after `:`, built-in functions with auto-inserted parentheses
   - **no completion while you are naming a declaration** — typing `int2 pixel` or `out MaterialConstants mat` does not pop up the global vocabulary
+- **Parameter info** (`Ctrl+P`; it also opens by itself as soon as you type `(` or `,`) — the parameter list of the function you are calling with **the argument under the caret highlighted**, resolved through the include chain, and `↑`/`↓` to step through overloads
 - **Live templates** — see the table below
 - **Go to declaration** (`Ctrl+Click` / `Ctrl+B`) — jump to function, variable and type declarations in the current file or any included file
 
@@ -151,7 +152,7 @@ The plugin zip lands in `build/distributions/`.
 .\gradlew.bat test
 ```
 
-87 tests cover the lexer, the declaration reader behind completion, the include index, DXC diagnostic parsing (including the real `no matching function` output) and IDE-level fixtures that run the actual completion contributor.
+98 tests cover the lexer, the declaration reader behind completion and parameter info, the include index, DXC diagnostic parsing (including the real `no matching function` output) and IDE-level fixtures that run the actual completion contributor and parameter info handler.
 
 `src/test/resources/dx12/` is a verbatim snapshot of a real DX12 project's shaders used as fixtures. Point `HLSL_TEST_SOURCE_DIR` at a live shader folder to run the same checks against your own sources:
 
@@ -167,7 +168,6 @@ $env:HLSL_TEST_SOURCE_DIR = "D:\DX12\LearnDX12\HLSL"; .\gradlew.bat test
 
 ## Known gaps
 
-- **Parameter info is not implemented** (`Ctrl+P` while typing an argument shows nothing) — the parameter list of the function you are calling is not displayed yet
 - The editor-side analysis is intentionally light: no full PSI, no `Ctrl+Click` into a candidate of an overload set, no rename/refactor
 - Type checking is delegated to DXC; the plugin does not re-implement HLSL semantics
 

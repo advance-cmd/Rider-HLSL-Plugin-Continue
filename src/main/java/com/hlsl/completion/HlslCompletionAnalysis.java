@@ -3,6 +3,7 @@ package com.hlsl.completion;
 import com.hlsl.lexer.HlslLexer;
 import com.hlsl.psi.HlslTokenTypes;
 import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.tree.IElementType;
 
@@ -20,15 +21,55 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * A deliberately small declaration reader for completion. The highlighting lexer calls any word
+ * A deliberately small declaration reader for code insight. The highlighting lexer calls any word
  * followed by '(' a FUNCTION_CALL; that token is not evidence of a declaration or a visible symbol.
  * Unknown receiver types produce no members rather than falling back to unrelated global names.
+ *
+ * <p>Code completion and parameter info have the same need — what is declared in this file and in its
+ * transitive include chain — so both read declarations through this class.</p>
  */
-final class HlslCompletionAnalysis {
+public final class HlslCompletionAnalysis {
     enum Context { CODE, SEMANTIC, MEMBER, SUPPRESSED }
     enum Kind { TYPE, FUNCTION, VARIABLE, MACRO, FIELD }
     record Candidate(String name, String type, Kind kind) { }
     record Result(Context context, List<Candidate> candidates) { }
+
+    /** One declared parameter, kept as written so the popup can highlight exactly it. */
+    public record Parameter(String type, String name) {
+        public String label() {
+            return name.isEmpty() ? type : type + " " + name;
+        }
+    }
+
+    /** A declared function. The parameter popup shows {@link #label()}. */
+    public record Signature(String name, String returnType, List<Parameter> parameters) {
+        public String label() {
+            StringBuilder label = new StringBuilder(name).append('(');
+            for (int i = 0; i < parameters.size(); i++) {
+                if (i > 0) label.append(", ");
+                label.append(parameters.get(i).label());
+            }
+            return label.append(')').toString();
+        }
+
+        /** Where one parameter sits inside {@link #label()}, empty when the index is out of range. */
+        public TextRange parameterRange(int index) {
+            int start = name.length() + 1;
+            for (int i = 0; i < parameters.size(); i++) {
+                String parameter = parameters.get(i).label();
+                if (i == index) return new TextRange(start, start + parameter.length());
+                start += parameter.length() + 2;
+            }
+            return new TextRange(name.length(), name.length());
+        }
+    }
+
+    /** The call the caret sits inside, with every overload of the callee that is visible there. */
+    public record CallInfo(String name, int parameterIndex, List<Signature> signatures) { }
+
+    /** Parentheses that never belong to a user function, so parameter info stays quiet there. */
+    private static final Set<String> NOT_A_CALL = Set.of(
+            "if", "for", "while", "switch", "sizeof", "defined", "return", "case");
 
     private static final Set<String> QUALIFIERS = Set.of(
             "const", "static", "extern", "uniform", "volatile", "inline", "shared", "groupshared",
@@ -131,6 +172,75 @@ final class HlslCompletionAnalysis {
 
     private static boolean endsWith(CharSequence source, int start, int end, String suffix) {
         return end - start >= suffix.length() && source.subSequence(end - suffix.length(), end).toString().equals(suffix);
+    }
+
+    /**
+     * The call the caret sits inside, when the callee is a function declared in the file or in its include
+     * chain. Control-flow parentheses and value constructors such as {@code float4(...)} are not calls, so
+     * they produce nothing rather than a misleading popup.
+     */
+    public static CallInfo callAt(CharSequence source, int offset, List<CharSequence> includes) {
+        if (isSuppressed(source, offset)) return null;
+        int position = Math.min(offset, source.length());
+        Parser parser = new Parser(source, false, position);
+        int open = enclosingCallParen(parser, position);
+        if (open <= 0 || parser.declarationParens.contains(open) || !parser.name(open - 1)) return null;
+        // A matched pair that already ended before the caret means the caret is outside the call.
+        Integer close = parser.pairs.get(open);
+        if (close != null && parser.tokens.get(close).start < position) return null;
+        String name = parser.tokens.get(open - 1).text;
+        if (NOT_A_CALL.contains(name)) return null;
+        Map<String, Set<Signature>> merged = new LinkedHashMap<>();
+        for (CharSequence include : includes) {
+            addSignatures(new Parser(include, true).functions, merged);
+        }
+        addSignatures(parser.functions, merged);
+        Set<Signature> overloads = merged.get(name);
+        if (overloads == null || overloads.isEmpty()) return null;
+        return new CallInfo(name, argumentIndex(parser, open, position), List.copyOf(overloads));
+    }
+
+    private static void addSignatures(Map<String, List<Signature>> from, Map<String, Set<Signature>> into) {
+        for (Map.Entry<String, List<Signature>> entry : from.entrySet()) {
+            into.computeIfAbsent(entry.getKey(), key -> new LinkedHashSet<>()).addAll(entry.getValue());
+        }
+    }
+
+    /** The '(' opening the call the caret is inside, or -1 when the caret is not inside a call. */
+    private static int enclosingCallParen(Parser parser, int offset) {
+        int depth = 0;
+        for (int i = parser.before(offset); i >= 0; i--) {
+            String text = parser.tokens.get(i).text;
+            if (text.equals(")")) {
+                depth++;
+            } else if (text.equals("(")) {
+                if (depth == 0) return i;
+                depth--;
+            } else if (depth == 0 && (text.equals(";") || text.equals("{") || text.equals("}"))) {
+                // A statement boundary means there is no enclosing call, only an earlier one.
+                return -1;
+            }
+        }
+        return -1;
+    }
+
+    /** How many top-level commas separate the caret from the opening parenthesis. */
+    private static int argumentIndex(Parser parser, int open, int offset) {
+        int index = 0;
+        int nesting = 0;
+        for (int i = open + 1; i < parser.tokens.size(); i++) {
+            Token token = parser.tokens.get(i);
+            if (token.start >= offset) break;
+            String text = token.text;
+            if (text.equals("(") || text.equals("[") || text.equals("{")) {
+                nesting++;
+            } else if (text.equals(")") || text.equals("]") || text.equals("}")) {
+                nesting--;
+            } else if (text.equals(",") && nesting == 0) {
+                index++;
+            }
+        }
+        return index;
     }
 
     private static boolean isIdentifierPart(char c) {
@@ -236,6 +346,9 @@ final class HlslCompletionAnalysis {
         final List<Token> tokens = new ArrayList<>();
         final List<Symbol> symbols = new ArrayList<>();
         final Map<String, Map<String, Candidate>> structures = new LinkedHashMap<>();
+        final Map<String, List<Signature>> functions = new LinkedHashMap<>();
+        /** Parentheses that belong to a declaration, where parameter info must stay quiet. */
+        final Set<Integer> declarationParens = new HashSet<>();
         final Set<Integer> semanticColons = new HashSet<>();
         final Map<Integer, Integer> pairs = new HashMap<>();
 
@@ -398,6 +511,8 @@ final class HlslCompletionAnalysis {
                 }
                 if (!is(after, "{") && !is(after, ";")) return from;
                 add(declaredName, type.toString(), Kind.FUNCTION, scopeEnd, scope, null);
+                declare(declaredName, type.toString(), i + 1, paramsEnd);
+                declarationParens.add(i);
                 if (!is(after, "{")) return after + 1;
                 int bodyEnd = close(after, to);
                 int functionEnd = bodyEnd < tokens.size() ? tokens.get(bodyEnd).end : scopeEnd;
@@ -442,8 +557,60 @@ final class HlslCompletionAnalysis {
             } else symbols.add(new Symbol(candidate, name.end, scopeEnd, scope == Scope.GLOBAL));
         }
 
-        int statementEnd(int from, int to) {
-            for (int i = from; i < to; i++) {
+        /** Remembers a function's parameter list so parameter info can show it. */
+        void declare(int nameToken, String returnType, int from, int to) {
+            String name = tokens.get(nameToken).text;
+            Signature signature = new Signature(name, returnType, parameters(from, to));
+            List<Signature> overloads = functions.computeIfAbsent(name, key -> new ArrayList<>());
+            if (!overloads.contains(signature)) overloads.add(signature);
+        }
+
+        /** Parses "type name" pairs; qualifiers, semantics and default values are skipped. */
+        List<Parameter> parameters(int from, int to) {
+            List<Parameter> parameters = new ArrayList<>();
+            if (is(from, "void")) return parameters;
+            int i = from;
+            while (i < to) {
+                while (i < to && QUALIFIERS.contains(tokens.get(i).text)) i++;
+                if (i >= to) break;
+                if (!name(i) && tokens.get(i).type != HlslTokenTypes.TYPE_KEYWORD) {
+                    i++;
+                    continue;
+                }
+                StringBuilder type = new StringBuilder(tokens.get(i++).text);
+                if (is(i, "<")) {
+                    int depth = 0;
+                    while (i < to) {
+                        String token = tokens.get(i++).text;
+                        type.append(token);
+                        if (token.equals("<")) {
+                            depth++;
+                        } else if (token.equals(">")) {
+                            if (--depth == 0) break;
+                        } else if (token.equals(">>")) {
+                            break;
+                        }
+                    }
+                }
+                while (is(i, "[")) {
+                    type.append("[]");
+                    i = close(i, to) + 1;
+                }
+                String parameterName = "";
+                if (i < to && name(i)) parameterName = tokens.get(i++).text;
+                parameters.add(new Parameter(type.toString(), parameterName));
+                // Skip the rest of this parameter: array sizes, semantics, default values.
+                while (i < to && !is(i, ",")) {
+                    if (is(i, "(") || is(i, "[") || is(i, "{")) i = close(i, to) + 1;
+                    else if (is(i, ")")) break;
+                    else i++;
+                }
+                if (is(i, ",")) i++;
+            }
+            return parameters;
+        }
+
+        int statementEnd(int from, int to) {            for (int i = from; i < to; i++) {
                 if (is(i, ";")) return i;
                 if (is(i, "(") || is(i, "[") || is(i, "{")) i = close(i, to);
             }

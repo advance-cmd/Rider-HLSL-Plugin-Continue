@@ -1,18 +1,20 @@
 package com.hlsl.completion;
 
-import com.intellij.codeInsight.completion.CompletionFinalSorter;
+import com.hlsl.HlslLanguage;
+import com.hlsl.parameterinfo.HlslParameterInfoHandler;
+import com.intellij.codeInsight.hint.ShowParameterInfoHandler;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementPresentation;
 import com.intellij.codeInsight.template.impl.LiveTemplateCompletionContributor;
-import com.intellij.openapi.util.Pair;
+import com.intellij.lang.parameterInfo.ParameterInfoHandler;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 /**
  * End-to-end checks with the plugin loaded in a real IDE fixture: contributor registration, VFS include
@@ -103,6 +105,20 @@ public class HlslCompletionInIdeTest extends BasePlatformTestCase {
         assertEquals("the include chain did not resolve in the fixture: " + sources, 1, sources.size());
         assertTrue("the resolved include is not LightingUtil.hlsl",
                 sources.get(0).toString().contains("struct PassConstants"));
+    }
+
+    public void testParameterInfoHandlerIsRegisteredForHlsl() {
+        ParameterInfoHandler[] handlers = ShowParameterInfoHandler.getHandlers(getProject(), HlslLanguage.INSTANCE);
+        assertTrue("the HLSL parameter info handler is not registered",
+                Arrays.stream(handlers).anyMatch(handler -> handler instanceof HlslParameterInfoHandler));
+    }
+
+    /** Drives the registered handler through the platform, which fails loudly if it is broken. */
+    public void testParameterInfoRunsOnARealCall() throws IOException {
+        addLightingUtil();
+        myFixture.configureByText("Deferred.hlsl", "float3 c = ApplyFog(<caret>);");
+        ShowParameterInfoHandler.invoke(getProject(), myFixture.getEditor(), myFixture.getFile(),
+                myFixture.getCaretOffset(), null, false);
     }
 
     public void testLiveTemplateWiringIsDeclaredAndPackaged() throws IOException {

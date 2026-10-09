@@ -45,6 +45,12 @@
                 language="HLSL"
                 implementationClass="com.hlsl.completion.HlslCompletionContributor"/>
 
+        <codeInsight.parameterInfo
+                language="HLSL"
+                implementationClass="com.hlsl.parameterinfo.HlslParameterInfoHandler"/>
+
+        <typedHandler implementation="com.hlsl.parameterinfo.HlslParameterInfoTypedHandler"/>
+
         <liveTemplateContext implementation="com.hlsl.templates.HlslTemplateContextType"/>
 
         <defaultLiveTemplatesProvider implementation="com.hlsl.templates.HlslLiveTemplatesProvider"/>
