@@ -51,6 +51,10 @@
 
         <typedHandler implementation="com.hlsl.parameterinfo.HlslParameterInfoTypedHandler"/>
 
+        <lang.documentationProvider
+                language="HLSL"
+                implementationClass="com.hlsl.documentation.HlslDocumentationProvider"/>
+
         <liveTemplateContext implementation="com.hlsl.templates.HlslTemplateContextType"/>
 
         <defaultLiveTemplatesProvider implementation="com.hlsl.templates.HlslLiveTemplatesProvider"/>

@@ -26,6 +26,7 @@ Syntax highlighting, code insight, DXC validation and clang-format for HLSL (Hig
   - semantics after `:`, built-in functions with auto-inserted parentheses
   - **no completion while you are naming a declaration** — typing `int2 pixel` or `out MaterialConstants mat` does not pop up the global vocabulary
 - **Parameter info** — opens by itself when you type `(` or `,`, and right after completing a function name, showing the parameter list of the call with **the argument under the caret highlighted**, parameters of declarations from included files included, and `↑`/`↓` to step through overloads. The platform's *Show Parameter Info* action also works; its shortcut comes from your keymap (`Ctrl+P` only in keymaps that bind it — in Rider's *Visual Studio* keymap that key is Print)
+- **Hover documentation** — hovering a function, variable, struct or macro shows its declaration together with the comment written above it, resolved through the include chain (so a call to a helper shows the helper's signature); `Ctrl+Q` opens the same text in the documentation popup
 - **Live templates** — see the table below
 - **Go to declaration** (`Ctrl+Click` / `Ctrl+B`) — jump to function, variable and type declarations in the current file or any included file
 
@@ -98,6 +99,18 @@ The plugin handles this in two ways:
 
 The settings page shows what detection currently resolved (`Detected build macros: …`), which is the quickest way to confirm that a macro such as `FOG` really is defined for the compile.
 
+### Which conversions HLSL accepts
+
+Some calls look wrong but are legal, so nothing is reported — that is DXC's language definition, not a missing check:
+
+| Call | Result |
+|---|---|
+| `ApplyFog(3, 2, 3, 4, 5)` where `float3`/`float4` parameters are expected | accepted: `int` converts to `float`, and a scalar is promoted (splatted) to a vector |
+| a `float` variable where `float3` is expected | accepted, same scalar promotion |
+| a `float4` where `float3` is expected | accepted, but DXC warns `implicit truncation of vector type` |
+| a `float2` where `float3` is expected | error: vectors are not widened |
+| too few or too many arguments | error, with the candidate's own explanation attached |
+
 ### Noise policy
 
 Validation is deliberately quiet so that real problems stand out:
@@ -152,7 +165,7 @@ The plugin zip lands in `build/distributions/`.
 .\gradlew.bat test
 ```
 
-100 tests cover the lexer, the declaration reader behind completion and parameter info, the include index, DXC diagnostic parsing (including the real `no matching function` output) and IDE-level fixtures that run the actual completion contributor and parameter info handler.
+104 tests cover the lexer, the declaration reader behind completion, parameter info and hover documentation, the include index, DXC diagnostic parsing (including the real `no matching function` output) and IDE-level fixtures that run the actual completion contributor and parameter info handler.
 
 `src/test/resources/dx12/` is a verbatim snapshot of a real DX12 project's shaders used as fixtures. Point `HLSL_TEST_SOURCE_DIR` at a live shader folder to run the same checks against your own sources:
 

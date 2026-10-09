@@ -30,7 +30,7 @@ import java.util.regex.Pattern;
  */
 public final class HlslCompletionAnalysis {
     enum Context { CODE, SEMANTIC, MEMBER, SUPPRESSED }
-    enum Kind { TYPE, FUNCTION, VARIABLE, MACRO, FIELD }
+    public enum Kind { TYPE, FUNCTION, VARIABLE, MACRO, FIELD }
     record Candidate(String name, String type, Kind kind) { }
     record Result(Context context, List<Candidate> candidates) { }
 
@@ -66,6 +66,12 @@ public final class HlslCompletionAnalysis {
 
     /** The call the caret sits inside, with every overload of the callee that is visible there. */
     public record CallInfo(String name, int parameterIndex, List<Signature> signatures) { }
+
+    /**
+     * A declaration with the comment written above it, which is what hovering the symbol shows. {@code text}
+     * is the declaration as it appears in the source, so a signature is never reconstructed from tokens.
+     */
+    public record Declaration(String name, Kind kind, String comment, String text) { }
 
     /** Parentheses that never belong to a user function, so parameter info stays quiet there. */
     private static final Set<String> NOT_A_CALL = Set.of(
@@ -200,6 +206,21 @@ public final class HlslCompletionAnalysis {
         return new CallInfo(name, argumentIndex(parser, open, position), List.copyOf(overloads));
     }
 
+    /**
+     * The declaration of {@code name} visible at {@code offset}: the file being edited wins over its
+     * includes, exactly as in completion, and the first include wins over the later ones.
+     */
+    public static Declaration declarationOf(String name, CharSequence source, int offset,
+                                            List<CharSequence> includes) {
+        Declaration fromIncludes = null;
+        for (CharSequence include : includes) {
+            Declaration candidate = new Parser(include, true).declarations.get(name);
+            if (candidate != null && fromIncludes == null) fromIncludes = candidate;
+        }
+        Declaration own = new Parser(source, false, Math.min(offset, source.length())).declarations.get(name);
+        return own != null ? own : fromIncludes;
+    }
+
     private static void addSignatures(Map<String, List<Signature>> from, Map<String, Set<Signature>> into) {
         for (Map.Entry<String, List<Signature>> entry : from.entrySet()) {
             into.computeIfAbsent(entry.getKey(), key -> new LinkedHashSet<>()).addAll(entry.getValue());
@@ -245,6 +266,30 @@ public final class HlslCompletionAnalysis {
 
     private static boolean isIdentifierPart(char c) {
         return Character.isLetterOrDigit(c) || c == '_';
+    }
+
+    /** Extends a declaration start backwards over the comment block written directly above it. */
+    private static int commentStart(CharSequence source, int start) {
+        int lineStart = Math.min(start, source.length());
+        while (lineStart > 0) {
+            int previousLineEnd = lineStart - 1;
+            while (previousLineEnd > 0 && (source.charAt(previousLineEnd) == '\n'
+                    || source.charAt(previousLineEnd) == '\r')) {
+                previousLineEnd--;
+            }
+            int previousLineStart = previousLineEnd;
+            while (previousLineStart > 0 && source.charAt(previousLineStart - 1) != '\n') {
+                previousLineStart--;
+            }
+            String line = source.subSequence(previousLineStart, previousLineEnd + 1).toString().strip();
+            if (!isCommentLine(line)) break;
+            lineStart = previousLineStart;
+        }
+        return lineStart;
+    }
+
+    private static boolean isCommentLine(String line) {
+        return line.startsWith("//") || line.startsWith("/*") || line.startsWith("*") || line.endsWith("*/");
     }
 
     private static Map<String, Candidate> members(String type, Map<String, Map<String, Candidate>> structures) {
@@ -347,6 +392,8 @@ public final class HlslCompletionAnalysis {
         final List<Symbol> symbols = new ArrayList<>();
         final Map<String, Map<String, Candidate>> structures = new LinkedHashMap<>();
         final Map<String, List<Signature>> functions = new LinkedHashMap<>();
+        /** Declarations together with the source text that documents them, for hover. */
+        final Map<String, Declaration> declarations = new LinkedHashMap<>();
         /** Parentheses that belong to a declaration, where parameter info must stay quiet. */
         final Set<Integer> declarationParens = new HashSet<>();
         final Set<Integer> semanticColons = new HashSet<>();
@@ -387,6 +434,7 @@ public final class HlslCompletionAnalysis {
                         if (matcher.group(1).equals("define")) {
                             macros.put(name, symbols.size());
                             symbols.add(new Symbol(new Candidate(name, "macro", Kind.MACRO), end, source.length() + 1, true));
+                            document(name, Kind.MACRO, start, end);
                         }
                     }
                 } else if (type != TokenType.WHITE_SPACE && type != HlslTokenTypes.LINE_COMMENT && type != HlslTokenTypes.BLOCK_COMMENT) {
@@ -471,6 +519,7 @@ public final class HlslCompletionAnalysis {
                 parseRange(body + 1, end, scopeEnd, scope, null);
             } else {
                 add(i + 1, name, Kind.TYPE, scopeEnd, scope, null);
+                document(i + 1, Kind.TYPE, tokens.get(i).start, tokens.get(body).start);
                 Map<String, Candidate> fields = new LinkedHashMap<>();
                 if (tokens.get(i + 1).end <= completionOffset && completionOffset < scopeEnd) structures.put(name, fields);
                 parseRange(body + 1, end, scopeEnd, Scope.FIELDS, fields);
@@ -513,6 +562,7 @@ public final class HlslCompletionAnalysis {
                 add(declaredName, type.toString(), Kind.FUNCTION, scopeEnd, scope, null);
                 declare(declaredName, type.toString(), i + 1, paramsEnd);
                 declarationParens.add(i);
+                document(declaredName, Kind.FUNCTION, tokens.get(typeStart).start, tokens.get(paramsEnd).end);
                 if (!is(after, "{")) return after + 1;
                 int bodyEnd = close(after, to);
                 int functionEnd = bodyEnd < tokens.size() ? tokens.get(bodyEnd).end : scopeEnd;
@@ -533,6 +583,9 @@ public final class HlslCompletionAnalysis {
                 }
                 if (i < to && !is(i, ";") && !is(i, ",") && !is(i, ":") && !is(i, "=") && !is(i, ")")) return from;
                 add(declaredName, declaredType, typedef ? Kind.TYPE : Kind.VARIABLE, scopeEnd, scope, fields);
+                int declarationEnd = find(i, to, ";", ",");
+                document(declaredName, typedef ? Kind.TYPE : Kind.VARIABLE, tokens.get(typeStart).start,
+                        declarationEnd < tokens.size() ? tokens.get(declarationEnd).start : tokens.get(i).end);
                 if (is(i, ":")) semanticColons.add(tokens.get(i).start);
                 while (i < to && !is(i, ";") && !is(i, ",")) {
                     if (is(i, "(") || is(i, "[") || is(i, "{")) i = close(i, to) + 1;
@@ -555,6 +608,19 @@ public final class HlslCompletionAnalysis {
             if (scope == Scope.FIELDS) {
                 if (fields != null) fields.put(name.text, candidate);
             } else symbols.add(new Symbol(candidate, name.end, scopeEnd, scope == Scope.GLOBAL));
+        }
+
+        /** Records a declaration's own text plus the comment block directly above it. */
+        void document(int nameToken, Kind kind, int startOffset, int endOffset) {
+            document(tokens.get(nameToken).text, kind, startOffset, endOffset);
+        }
+
+        void document(String name, Kind kind, int startOffset, int endOffset) {
+            if (declarations.containsKey(name)) return;
+            int commentFrom = commentStart(source, startOffset);
+            declarations.put(name, new Declaration(name, kind,
+                    source.subSequence(commentFrom, startOffset).toString().strip(),
+                    source.subSequence(startOffset, Math.min(endOffset, source.length())).toString().strip()));
         }
 
         /** Remembers a function's parameter list so parameter info can show it. */
