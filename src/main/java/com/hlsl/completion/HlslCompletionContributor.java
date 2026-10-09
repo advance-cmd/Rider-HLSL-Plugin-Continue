@@ -2,7 +2,6 @@ package com.hlsl.completion;
 
 import com.hlsl.HlslLanguage;
 import com.hlsl.lexer.HlslLexer;
-import com.hlsl.psi.HlslTokenTypes;
 import com.intellij.codeInsight.completion.CompletionContributor;
 import com.intellij.codeInsight.completion.CompletionParameters;
 import com.intellij.codeInsight.completion.CompletionProvider;
@@ -12,16 +11,17 @@ import com.intellij.codeInsight.completion.InsertHandler;
 import com.intellij.codeInsight.completion.InsertionContext;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
+import com.intellij.codeInsight.completion.PrefixMatcher;
+import com.intellij.codeInsight.template.impl.TemplateImpl;
+import com.intellij.codeInsight.template.impl.TemplateSettings;
 import com.intellij.icons.AllIcons;
-import com.intellij.lang.ASTNode;
 import com.intellij.patterns.PlatformPatterns;
-import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.tree.IElementType;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class HlslCompletionContributor extends CompletionContributor {
@@ -40,91 +40,148 @@ public class HlslCompletionContributor extends CompletionContributor {
             PsiFile file = parameters.getOriginalFile();
             if (file.getLanguage() != HlslLanguage.INSTANCE) return;
 
-            PsiElement position = parameters.getPosition();
-            boolean afterColon = isAfterColon(position);
+            // HLSL names are CamelCase (Texture2D, InvViewProj, GetDimensions), so a lowercase prefix such
+            // as "gPass.inv" must still match them. Relying on the platform's matcher silently dropped every
+            // candidate under a case-sensitive setting, which looked like "no completion at all".
+            CompletionResultSet lookup = caseInsensitive(result);
 
-            // Static vocabulary
+            CharSequence source = file.getViewProvider().getDocument() != null
+                    ? file.getViewProvider().getDocument().getCharsSequence() : file.getViewProvider().getContents();
+            int offset = parameters.getOffset();
+            if (HlslCompletionAnalysis.isSuppressed(source, offset)) {
+                stop(result, lookup);
+                return;
+            }
+
+            HlslIncludeIndex index = file.getProject().getService(HlslIncludeIndex.class);
+            List<CharSequence> includes = index != null && file.getVirtualFile() != null
+                    ? index.collectTransitiveSources(file.getVirtualFile()) : List.of();
+            HlslCompletionAnalysis.Result analysis = HlslCompletionAnalysis.analyze(source, offset, includes);
+            if (analysis.context() == HlslCompletionAnalysis.Context.SUPPRESSED) {
+                stop(result, lookup);
+                return;
+            }
+            if (analysis.context() == HlslCompletionAnalysis.Context.SEMANTIC) {
+                for (String semantic : HlslLexer.getSemantics()) {
+                    lookup.addElement(LookupElementBuilder.create(semantic).withIcon(AllIcons.Nodes.Annotationtype));
+                }
+                stop(result, lookup);
+                return;
+            }
+            if (analysis.context() == HlslCompletionAnalysis.Context.MEMBER) {
+                for (HlslCompletionAnalysis.Candidate member : analysis.candidates()) {
+                    LookupElementBuilder element = LookupElementBuilder.create(member.name())
+                            .withTypeText(member.type(), true);
+                    if (member.kind() == HlslCompletionAnalysis.Kind.FUNCTION) {
+                        element = element.withIcon(AllIcons.Nodes.Method)
+                                .withTailText("()", true)
+                                .withInsertHandler(PAREN_INSERT);
+                    } else {
+                        element = element.withIcon(AllIcons.Nodes.Field);
+                    }
+                    lookup.addElement(element);
+                }
+                stop(result, lookup);
+                return;
+            }
+
+            // Static vocabulary. A keyword that also has a live template is left out: two entries with an
+            // identical lookup string are ordered by the platform without consulting this plugin, so the bare
+            // keyword would shadow the `struct`/`cbuffer` templates, which expand to the whole declaration.
+            Set<String> added = new HashSet<>();
+            for (HlslCompletionAnalysis.Candidate symbol : analysis.candidates()) {
+                if (!added.add(symbol.name())) continue;
+                LookupElementBuilder element = LookupElementBuilder.create(symbol.name()).withTypeText(symbol.type(), true);
+                if (symbol.kind() == HlslCompletionAnalysis.Kind.FUNCTION) {
+                    element = element.withIcon(AllIcons.Nodes.Method).withTailText("()", true).withInsertHandler(PAREN_INSERT);
+                } else if (symbol.kind() == HlslCompletionAnalysis.Kind.TYPE) {
+                    element = element.withIcon(AllIcons.Nodes.Class);
+                } else {
+                    element = element.withIcon(AllIcons.Nodes.Variable);
+                }
+                lookup.addElement(element);
+            }
             for (String kw : HlslLexer.getKeywords()) {
-                result.addElement(LookupElementBuilder.create(kw)
+                if (!added.add(kw) || hasLiveTemplate(kw)) continue;
+                lookup.addElement(LookupElementBuilder.create(kw)
                         .withBoldness(true)
                         .withIcon(AllIcons.Nodes.Favorite));
             }
             for (String t : HlslLexer.getTypeKeywords()) {
-                result.addElement(LookupElementBuilder.create(t)
+                if (!added.add(t)) continue;
+                lookup.addElement(LookupElementBuilder.create(t)
                         .withIcon(AllIcons.Nodes.Class));
             }
             for (String fn : HlslLexer.getBuiltinFunctions()) {
-                result.addElement(LookupElementBuilder.create(fn)
+                if (!added.add(fn)) continue;
+                lookup.addElement(LookupElementBuilder.create(fn)
                         .withIcon(AllIcons.Nodes.Method)
                         .withTailText("()", true)
                         .withInsertHandler(PAREN_INSERT));
             }
-            if (afterColon) {
-                for (String s : HlslLexer.getSemantics()) {
-                    result.addElement(LookupElementBuilder.create(s)
-                            .withIcon(AllIcons.Nodes.Annotationtype));
-                }
-            }
-
-            // Local identifiers from current file
-            Set<String> locals = collectLocalIdentifiers(file);
-            String currentWord = currentWordAt(position);
-            for (String name : locals) {
-                if (name.equals(currentWord)) continue;
-                result.addElement(LookupElementBuilder.create(name)
-                        .withIcon(AllIcons.Nodes.Variable));
-            }
-
-            // Identifiers reachable through #include directives
-            HlslIncludeIndex index = file.getProject().getService(HlslIncludeIndex.class);
-            if (index != null && file.getVirtualFile() != null) {
-                Set<String> included = index.collectTransitiveIdentifiers(file.getVirtualFile());
-                for (String name : included) {
-                    if (name.equals(currentWord) || locals.contains(name)) continue;
-                    result.addElement(LookupElementBuilder.create(name)
-                            .withIcon(AllIcons.Nodes.Include)
-                            .withTypeText("included", true));
-                }
-            }
         }
+    }
+
+    /** Abbreviations of the live templates this plugin ships, see resources/liveTemplates/HLSL.xml. */
+    private static final Set<String> TEMPLATE_ABBREVIATIONS = Set.of("struct", "cbuffer");
+
+    /**
+     * True when a shipped live template with this abbreviation is registered, in which case offering the bare
+     * keyword as well would put a worse entry first.
+     */
+    private static boolean hasLiveTemplate(String keyword) {
+        if (!TEMPLATE_ABBREVIATIONS.contains(keyword)) return false;
+        for (TemplateImpl template : TemplateSettings.getInstance().getTemplates()) {
+            if (keyword.equals(template.getKey())) return true;
+        }
+        return false;
+    }
+
+    private static CompletionResultSet caseInsensitive(CompletionResultSet result) {
+        String prefix = result.getPrefixMatcher().getPrefix();
+        return prefix.isEmpty() ? result : result.withPrefixMatcher(new CaseInsensitivePrefixMatcher(prefix));
+    }
+
+    /**
+     * The platform's matcher is case sensitive, which hides every CamelCase HLSL name (InvViewProj,
+     * GetDimensions, Texture2D) as soon as the typed prefix uses different capitalisation.
+     */
+    private static final class CaseInsensitivePrefixMatcher extends PrefixMatcher {
+        CaseInsensitivePrefixMatcher(String prefix) {
+            super(prefix);
+        }
+
+        @Override
+        public boolean prefixMatches(@NotNull String name) {
+            return name.regionMatches(true, 0, myPrefix, 0, myPrefix.length());
+        }
+
+        @Override
+        public @NotNull PrefixMatcher cloneWithPrefix(@NotNull String newPrefix) {
+            return new CaseInsensitivePrefixMatcher(newPrefix);
+        }
+    }
+
+    /**
+     * Marks the completion as finished on both the platform's result set and the re-wrapped one, because the
+     * platform inspects its own instance to decide whether later contributors may still add variants.
+     */
+    private static void stop(CompletionResultSet original, CompletionResultSet target) {
+        target.stopHere();
+        if (target != original) original.stopHere();
     }
 
     private static final InsertHandler<LookupElement> PAREN_INSERT = (InsertionContext ctx, LookupElement item) -> {
         int offset = ctx.getTailOffset();
+        CharSequence text = ctx.getDocument().getCharsSequence();
+        int next = offset;
+        while (next < text.length() && Character.isWhitespace(text.charAt(next))) next++;
+        if (ctx.getCompletionChar() == '(') ctx.setAddCompletionChar(false);
+        if (next < text.length() && text.charAt(next) == '(') {
+            ctx.getEditor().getCaretModel().moveToOffset(next + 1);
+            return;
+        }
         ctx.getDocument().insertString(offset, "()");
         ctx.getEditor().getCaretModel().moveToOffset(offset + 1);
     };
-
-    private static Set<String> collectLocalIdentifiers(PsiFile file) {
-        Set<String> names = new HashSet<>();
-        ASTNode node = file.getNode().getFirstChildNode();
-        while (node != null) {
-            IElementType type = node.getElementType();
-            if (type == HlslTokenTypes.IDENTIFIER
-                    || type == HlslTokenTypes.STRUCT_NAME
-                    || type == HlslTokenTypes.FUNCTION_CALL) {
-                String text = node.getText();
-                if (!text.isEmpty() && !text.contains("IntellijIdeaRulezzz")) {
-                    names.add(text);
-                }
-            }
-            node = node.getTreeNext();
-        }
-        return names;
-    }
-
-    private static String currentWordAt(PsiElement position) {
-        String text = position.getText();
-        if (text == null) return "";
-        int idx = text.indexOf("IntellijIdeaRulezzz");
-        return idx >= 0 ? text.substring(0, idx) : text;
-    }
-
-    private static boolean isAfterColon(PsiElement position) {
-        PsiElement prev = position.getPrevSibling();
-        while (prev != null && prev.getNode().getElementType() == com.intellij.psi.TokenType.WHITE_SPACE) {
-            prev = prev.getPrevSibling();
-        }
-        return prev != null && prev.getNode().getElementType() == HlslTokenTypes.COLON;
-    }
 }

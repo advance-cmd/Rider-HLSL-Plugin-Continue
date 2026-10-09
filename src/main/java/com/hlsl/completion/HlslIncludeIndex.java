@@ -3,176 +3,165 @@ package com.hlsl.completion;
 import com.hlsl.lexer.HlslLexer;
 import com.hlsl.psi.HlslTokenTypes;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.TokenType;
 import com.intellij.psi.tree.IElementType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Parses HLSL files to extract identifiers and #include directives, caches per-file,
- * and walks the transitive include graph on demand.
- */
+/** Caches source snapshots and declarations, and walks the transitive include graph. */
 @Service(Service.Level.PROJECT)
 public final class HlslIncludeIndex {
 
-    private static final Pattern INCLUDE_PATTERN =
-            Pattern.compile("#\\s*include\\s+[\"<]([^\">]+)[\">]");
-
-    private static final Pattern DEFINE_PATTERN =
-            Pattern.compile("#\\s*define\\s+([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern INCLUDE_PATTERN = Pattern.compile(
+            "^#[ \\t]*include[ \\t]*(?:\"([^\"\\r\\n]+)\"|<([^>\\r\\n]+)>)");
 
     private static final int MAX_PARENT_WALK = 10;
+    private static final int MAX_INCLUDE_DEPTH = 32;
 
-    private final ConcurrentHashMap<String, Entry> cache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<VirtualFile, Entry> cache = new ConcurrentHashMap<>();
 
     public HlslIncludeIndex(@SuppressWarnings("unused") Project project) {
     }
 
     private static final class Entry {
         final long modificationStamp;
+        final boolean fromDocument;
+        final CharSequence source;
         final Set<String> identifiers;
         final List<String> includes;
 
-        Entry(long stamp, Set<String> identifiers, List<String> includes) {
+        Entry(long stamp, boolean fromDocument, CharSequence source,
+              Set<String> identifiers, List<String> includes) {
             this.modificationStamp = stamp;
+            this.fromDocument = fromDocument;
+            this.source = source;
             this.identifiers = identifiers;
             this.includes = includes;
         }
     }
 
+    /** The current file's declarations are handled separately with its lexical scope. */
     public @NotNull Set<String> collectTransitiveIdentifiers(@Nullable VirtualFile file) {
         if (file == null) return Collections.emptySet();
         Set<String> result = new HashSet<>();
-        Set<String> visited = new HashSet<>();
-        collect(file, result, visited, 0);
+        forEachIncludedEntry(file, entry -> result.addAll(entry.identifiers));
         return result;
     }
 
-    private void collect(VirtualFile file, Set<String> out, Set<String> visited, int depth) {
-        if (depth > 32) return;
-        if (!visited.add(file.getPath())) return;
-        Entry entry = getOrParse(file);
-        if (entry == null) return;
-        out.addAll(entry.identifiers);
+    /** Supplies included type declarations for member completion, including unsaved edits. */
+    public @NotNull List<CharSequence> collectTransitiveSources(@Nullable VirtualFile file) {
+        if (file == null) return Collections.emptyList();
+        List<CharSequence> result = new ArrayList<>();
+        forEachIncludedEntry(file, entry -> result.add(entry.source));
+        return result;
+    }
+
+    private void forEachIncludedEntry(VirtualFile file, Consumer<Entry> consumer) {
+        Entry root = getOrParse(file);
+        if (root == null) return;
+        Set<VirtualFile> visited = new HashSet<>();
+        visited.add(file);
+        collectIncludes(file, root, visited, 0, consumer);
+    }
+
+    private void collectIncludes(VirtualFile file, Entry entry, Set<VirtualFile> visited,
+                                 int depth, Consumer<Entry> consumer) {
+        ProgressManager.checkCanceled();
+        if (depth >= MAX_INCLUDE_DEPTH) return;
         for (String include : entry.includes) {
+            ProgressManager.checkCanceled();
             VirtualFile resolved = resolve(file, include);
-            if (resolved != null) {
-                collect(resolved, out, visited, depth + 1);
-            }
+            if (resolved == null || !visited.add(resolved)) continue;
+            Entry included = getOrParse(resolved);
+            if (included == null) continue;
+            consumer.accept(included);
+            collectIncludes(resolved, included, visited, depth + 1, consumer);
         }
     }
 
     private @Nullable Entry getOrParse(VirtualFile file) {
-        long stamp = file.getModificationStamp();
-        Entry cached = cache.get(file.getPath());
-        if (cached != null && cached.modificationStamp == stamp) {
+        ProgressManager.checkCanceled();
+        if (!file.isValid() || file.isDirectory()) {
+            cache.remove(file);
+            return null;
+        }
+        Document document = FileDocumentManager.getInstance().getCachedDocument(file);
+        boolean fromDocument = document != null;
+        // VFS and document stamps have different lifetimes and must not be interchangeable.
+        long stamp = fromDocument ? document.getModificationStamp() : file.getModificationStamp();
+        Entry cached = cache.get(file);
+        if (cached != null && cached.fromDocument == fromDocument && cached.modificationStamp == stamp) {
             return cached;
         }
-        Entry parsed = parse(file);
-        if (parsed != null) {
-            cache.put(file.getPath(), parsed);
-        }
-        return parsed;
-    }
 
-    private @Nullable Entry parse(VirtualFile file) {
-        CharSequence text;
+        CharSequence source;
         try {
-            byte[] bytes = file.contentsToByteArray();
-            text = new String(bytes, file.getCharset() != null ? file.getCharset() : StandardCharsets.UTF_8);
+            source = fromDocument ? document.getImmutableCharSequence() : VfsUtilCore.loadText(file);
         } catch (IOException e) {
+            cache.remove(file);
             return null;
         }
 
-        Set<String> identifiers = new HashSet<>();
+        // Keep the stamp captured before the snapshot, never a later stamp for older contents.
+        Entry parsed = new Entry(stamp, fromDocument, source,
+                Set.copyOf(HlslCompletionAnalysis.collectExportedIdentifiers(source)),
+                List.copyOf(parseIncludes(source)));
+        cache.put(file, parsed);
+        return parsed;
+    }
+
+    static @NotNull List<String> parseIncludes(CharSequence source) {
         List<String> includes = new ArrayList<>();
-
-        // First pass: collect significant tokens (skip whitespace/comments)
-        List<IElementType> types = new ArrayList<>();
-        List<String> texts = new ArrayList<>();
-
         HlslLexer lexer = new HlslLexer();
-        lexer.start(text, 0, text.length(), 0);
+        lexer.start(source, 0, source.length(), 0);
+        boolean directiveStart = true;
         while (lexer.getTokenType() != null) {
-            IElementType t = lexer.getTokenType();
-            if (t != com.intellij.psi.TokenType.WHITE_SPACE
-                    && t != HlslTokenTypes.LINE_COMMENT
-                    && t != HlslTokenTypes.BLOCK_COMMENT) {
-                types.add(t);
-                texts.add(text.subSequence(lexer.getTokenStart(), lexer.getTokenEnd()).toString());
+            ProgressManager.checkCanceled();
+            IElementType type = lexer.getTokenType();
+            if (type == HlslTokenTypes.PREPROCESSOR && directiveStart) {
+                String directive = source.subSequence(lexer.getTokenStart(), lexer.getTokenEnd()).toString()
+                        .replace("\\\r\n", "").replace("\\\n", "");
+                // Match only the directive itself: a #include in a macro body is not an include.
+                Matcher match = INCLUDE_PATTERN.matcher(directive);
+                if (match.find()) {
+                    includes.add(match.group(1) != null ? match.group(1) : match.group(2));
+                }
+            }
+            if (type == TokenType.WHITE_SPACE || type == HlslTokenTypes.LINE_COMMENT
+                    || type == HlslTokenTypes.BLOCK_COMMENT) {
+                // A leading comment is preprocessing whitespace, too.
+                if (containsLineBreak(source, lexer.getTokenStart(), lexer.getTokenEnd())) directiveStart = true;
+            } else {
+                directiveStart = false;
             }
             lexer.advance();
         }
-
-        // Second pass: filter to functions, struct names, and global constants
-        int braceDepth = 0;
-        int parenDepth = 0;
-        for (int i = 0; i < types.size(); i++) {
-            IElementType t = types.get(i);
-            String tx = texts.get(i);
-
-            if (t == HlslTokenTypes.LBRACE) braceDepth++;
-            else if (t == HlslTokenTypes.RBRACE) braceDepth = Math.max(0, braceDepth - 1);
-            else if (t == HlslTokenTypes.LPAREN) parenDepth++;
-            else if (t == HlslTokenTypes.RPAREN) parenDepth = Math.max(0, parenDepth - 1);
-
-            if (t == HlslTokenTypes.FUNCTION_CALL || t == HlslTokenTypes.STRUCT_NAME) {
-                identifiers.add(tx);
-            } else if (t == HlslTokenTypes.PREPROCESSOR) {
-                Matcher incMatch = INCLUDE_PATTERN.matcher(tx);
-                if (incMatch.find()) {
-                    includes.add(incMatch.group(1));
-                }
-                Matcher defMatch = DEFINE_PATTERN.matcher(tx);
-                if (defMatch.find()) {
-                    identifiers.add(defMatch.group(1));
-                }
-            } else if (braceDepth == 0 && parenDepth == 0
-                    && t == HlslTokenTypes.KEYWORD && "const".equals(tx)) {
-                String name = findDeclaredName(types, texts, i + 1);
-                if (name != null) identifiers.add(name);
-            }
-        }
-
-        return new Entry(file.getModificationStamp(), identifiers, includes);
+        return includes;
     }
 
-    /**
-     * After a top-level `const` keyword, skip type tokens and return the first identifier
-     * that looks like a variable name (followed by `=`, `;`, `[`, or `:`).
-     */
-    private static @Nullable String findDeclaredName(List<IElementType> types, List<String> texts, int from) {
-        String candidate = null;
-        for (int i = from; i < types.size() && i < from + 16; i++) {
-            IElementType t = types.get(i);
-            if (t == HlslTokenTypes.TYPE_KEYWORD || t == HlslTokenTypes.KEYWORD) {
-                continue;
-            }
-            if (t == HlslTokenTypes.IDENTIFIER
-                    || t == HlslTokenTypes.STRUCT_NAME
-                    || t == HlslTokenTypes.FUNCTION_CALL) {
-                candidate = texts.get(i);
-                continue;
-            }
-            if (t == HlslTokenTypes.OPERATOR && "=".equals(texts.get(i))) return candidate;
-            if (t == HlslTokenTypes.SEMICOLON) return candidate;
-            if (t == HlslTokenTypes.LBRACKET) return candidate;
-            if (t == HlslTokenTypes.COLON) return candidate;
-            if (t == HlslTokenTypes.LPAREN) return null;
+    private static boolean containsLineBreak(CharSequence source, int start, int end) {
+        for (int i = start; i < end; i++) {
+            char c = source.charAt(i);
+            if (c == '\n' || c == '\r') return true;
         }
-        return null;
+        return false;
     }
 
     private static @Nullable VirtualFile resolve(VirtualFile fromFile, String include) {
@@ -186,6 +175,7 @@ public final class HlslIncludeIndex {
         VirtualFile cur = dir.getParent();
         int walked = 0;
         while (cur != null && walked < MAX_PARENT_WALK) {
+            ProgressManager.checkCanceled();
             found = cur.findFileByRelativePath(normalized);
             if (found != null && !found.isDirectory()) return found;
             cur = cur.getParent();

@@ -1,321 +1,303 @@
 package com.hlsl.validation;
 
 import com.hlsl.HlslFileType;
+import com.hlsl.completion.HlslIncludeIndex;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.ExternalAnnotator;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
+import com.intellij.util.execution.ParametersListUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.InputStreamReader;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.CollectedInfo, List<HlslDxcAnnotator.DxcDiagnostic>> {
-
+public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.CollectedInfo, HlslDxcAnnotator.ValidationResult> {
     private static final Logger LOG = Logger.getInstance(HlslDxcAnnotator.class);
+    private static final long TIMEOUT_SECONDS = 30;
+    /** A wall of file-level annotations hides the code, so only a few are shown. */
+    private static final int MAX_FILE_LEVEL_DIAGNOSTICS = 5;
+    private static final Pattern UNDECLARED_IDENTIFIER =
+            Pattern.compile("use of undeclared identifier '([A-Za-z_][A-Za-z0-9_]*)'");
 
-    // DXC error format: <file>:<line>:<col>: error: <message>
-    private static final Pattern DIAG_PATTERN = Pattern.compile(
-            "^(?:.*?:(\\d+):(\\d+):\\s*)?(error|warning|note):\\s*(.+)$"
-    );
-
-    // Matches "parameter 'X' is not used" to extract parameter name for false-positive filtering
-    private static final Pattern UNUSED_PARAM_PATTERN = Pattern.compile(
-            "parameter '(\\w+)' is not used"
-    );
-
-    public static class CollectedInfo {
+    public static final class CollectedInfo {
         final String fileContent;
         final String filePath;
-        final PsiFile psiFile;
+        final long modificationStamp;
+        final HlslDxcSettings.State settings;
+        final HlslDxcSource source;
+        /** Macros the project's build system passes, as "NAME=VALUE". */
+        final List<String> buildMacros;
 
-        CollectedInfo(String fileContent, String filePath, PsiFile psiFile) {
+        CollectedInfo(String fileContent, String filePath, long modificationStamp, HlslDxcSettings.State settings) {
+            this(fileContent, filePath, modificationStamp, settings, List.of());
+        }
+
+        CollectedInfo(String fileContent, String filePath, long modificationStamp, HlslDxcSettings.State settings,
+                      List<String> buildMacros) {
             this.fileContent = fileContent;
             this.filePath = filePath;
-            this.psiFile = psiFile;
+            this.modificationStamp = modificationStamp;
+            this.settings = settings;
+            this.source = new HlslDxcSource(fileContent);
+            this.buildMacros = List.copyOf(buildMacros);
+        }
+
+        boolean matches(String currentPath, long currentStamp, String currentText) {
+            return filePath.equals(currentPath) && modificationStamp == currentStamp && fileContent.equals(currentText);
         }
     }
 
-    public static class DxcDiagnostic {
-        final int line;       // 1-based, 0 = unknown
-        final int column;     // 1-based, 0 = unknown
-        final String severity; // "error", "warning", "note", or "info" for plugin messages
-        final String message;
-
-        DxcDiagnostic(int line, int column, String severity, String message) {
-            this.line = line;
-            this.column = column;
-            this.severity = severity;
-            this.message = message;
-        }
-    }
+    public record ValidationResult(CollectedInfo info, List<HlslDxcDiagnostics.Diagnostic> diagnostics) {}
 
     @Override
     public @Nullable CollectedInfo collectInformation(@NotNull PsiFile file) {
-        HlslDxcSettings settings = HlslDxcSettings.getInstance();
-        if (!settings.isEnableValidation()) return null;
+        HlslDxcSettings.State settings = HlslDxcSettings.getInstance().snapshot();
+        if (!settings.enableValidation || !(file.getFileType() instanceof HlslFileType)) return null;
+        VirtualFile virtualFile = file.getVirtualFile();
+        if (virtualFile == null) return null;
+        Document document = FileDocumentManager.getInstance().getDocument(virtualFile);
+        if (document == null) return null;
+        if (!new HlslDxcSource(document.getText())
+                .shouldValidate(virtualFile.getPath(), settings.validateIncludeFiles)) return null;
+        List<String> buildMacros = settings.autoDetectBuildMacros
+                ? detectBuildMacros(file, virtualFile, document) : List.of();
+        return new CollectedInfo(document.getText(), virtualFile.getPath(), document.getModificationStamp(),
+                settings, buildMacros);
+    }
 
-        VirtualFile vFile = file.getVirtualFile();
-        if (vFile == null) return null;
-        if (!(file.getFileType() instanceof HlslFileType)) return null;
-
-        Document doc = FileDocumentManager.getInstance().getDocument(vFile);
-        if (doc == null) return null;
-
-        return new CollectedInfo(doc.getText(), vFile.getPath(), file);
+    /**
+     * DXC compiles the shader standalone and never sees the macros the build system passes, so they are read
+     * from the project's {@code D3D_SHADER_MACRO} tables. Without this, a shader that relies on them reports
+     * "undeclared identifier" for a name the real build defines.
+     */
+    private static List<String> detectBuildMacros(PsiFile file, VirtualFile virtualFile, Document document) {
+        HlslShaderMacroIndex index = file.getProject().getService(HlslShaderMacroIndex.class);
+        if (index == null) return List.of();
+        StringBuilder code = new StringBuilder(document.getText());
+        HlslIncludeIndex includes = file.getProject().getService(HlslIncludeIndex.class);
+        if (includes != null) {
+            // A macro may only be mentioned by an included helper, so the whole include chain counts.
+            for (CharSequence include : includes.collectTransitiveSources(virtualFile)) {
+                code.append('\n').append(include);
+            }
+        }
+        return index.definitionsFor(virtualFile, code);
     }
 
     @Override
-    public @Nullable List<DxcDiagnostic> doAnnotate(CollectedInfo info) {
+    public @Nullable ValidationResult doAnnotate(CollectedInfo info) {
         if (info == null) return null;
-
-        HlslDxcSettings settings = HlslDxcSettings.getInstance();
-        String dxcPath = settings.getResolvedDxcPath();
-
-        List<DxcDiagnostic> diagnostics = new ArrayList<>();
-
+        String dxcPath = info.settings.dxcPath;
+        if (dxcPath == null || dxcPath.isBlank()) dxcPath = HlslDxcSettings.autoDetectDxc();
         if (dxcPath == null || dxcPath.isBlank()) {
-            diagnostics.add(new DxcDiagnostic(0, 0, "info",
-                    "DXC not found. Configure path in Settings \u2192 Tools \u2192 HLSL / DXC, " +
-                    "or install Windows SDK / Vulkan SDK."));
-            return diagnostics;
+            return message(info, "DXC not found. Configure the compiler in Settings → Tools → HLSL / DXC.");
         }
 
-        // Check that the executable exists
-        if (!new File(dxcPath).isFile() && !isInPath(dxcPath)) {
-            diagnostics.add(new DxcDiagnostic(0, 0, "info",
-                    "DXC executable not found at: " + dxcPath +
-                    ". Update path in Settings \u2192 Tools \u2192 HLSL / DXC."));
-            return diagnostics;
-        }
-
-        String profile = extractPragmaValue(info.fileContent, "profile", settings.getDefaultProfile());
-        String entryPoint = extractPragmaValue(info.fileContent, "entry", settings.getDefaultEntryPoint());
-
-        Path tempFile = null;
+        Path tempDirectory = null;
+        Process process = null;
         try {
-            tempFile = Files.createTempFile("hlsl_validate_", ".hlsl");
-            Files.writeString(tempFile, info.fileContent, StandardCharsets.UTF_8);
+            ProgressManager.checkCanceled();
+            tempDirectory = Files.createTempDirectory("hlsl_validate_");
+            Path tempFile = tempDirectory.resolve("source.hlsl");
+            Path objectFile = tempDirectory.resolve("shader.dxil");
+            Path outputFile = tempDirectory.resolve("diagnostics.txt");
+            Files.writeString(tempFile, info.source.compilerText(), StandardCharsets.UTF_8);
 
-            List<String> command = new ArrayList<>();
-            command.add(dxcPath);
-            command.add("-T");
-            command.add(profile);
-            command.add("-E");
-            command.add(entryPoint);
-            command.add("-nologo");
-            // Start with all warnings enabled, then suppress unchecked groups
-            command.add("-Weverything");
-            // Suppress noisy DXC built-in warnings
-            command.add("-Wno-unused-macros");
-            command.add("-Wno-missing-prototypes");
-            command.add("-Wno-missing-variable-declarations");
-            if (!settings.isWarnUnusedVariable()) command.add("-Wno-unused-variable");
-            if (!settings.isWarnUnusedParameter()) command.add("-Wno-unused-parameter");
-            if (!settings.isWarnUnreachableCode()) {
-                command.add("-Wno-unreachable-code");
-                command.add("-Wno-unreachable-code-return");
-            }
-            if (!settings.isWarnUninitializedVariable()) command.add("-Wno-uninitialized");
-            if (!settings.isWarnImplicitTruncation()) command.add("-Wno-implicit-truncation");
-            if (!settings.isWarnConversion()) command.add("-Wno-conversion");
-            if (!settings.isWarnPayloadAccess()) command.add("-Wno-payload-access-warning");
-            if (!settings.isWarnEffectsSyntax()) command.add("-Wno-effects-syntax");
-            // Disable DXIL validation (we only want compilation diagnostics)
-            command.add("-Vd");
-            // HLSL version (2021 needed for ResourceDescriptorHeap etc.)
-            String hlslVersion = settings.getHlslVersion();
-            if (hlslVersion != null && !hlslVersion.isBlank()) {
-                command.add("-HV");
-                command.add(hlslVersion);
-            }
-            if (settings.isTreatWarningsAsErrors()) {
-                command.add("-WX");
-            }
-            // Add user-specified additional arguments
-            String additionalArgs = settings.getAdditionalArgs();
-            if (additionalArgs != null && !additionalArgs.isBlank()) {
-                for (String arg : additionalArgs.trim().split("\\s+")) {
-                    if (!arg.isEmpty()) {
-                        command.add(arg);
-                    }
+            List<String> command = buildCommand(info, dxcPath, tempFile, objectFile);
+            ProcessBuilder builder = new ProcessBuilder(command);
+            File originalDirectory = new File(info.filePath).getAbsoluteFile().getParentFile();
+            if (originalDirectory != null) builder.directory(originalDirectory);
+            // Never block reading a pipe before waiting for the process: a stalled DXC must time out.
+            builder.redirectErrorStream(true).redirectOutput(outputFile.toFile());
+            process = builder.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+            while (!process.waitFor(100, TimeUnit.MILLISECONDS)) {
+                ProgressManager.checkCanceled();
+                if (System.nanoTime() >= deadline) {
+                    return message(info, "DXC timed out after " + TIMEOUT_SECONDS + " seconds.");
                 }
             }
-            // Add include path from original file's directory
-            String originalDir = new File(info.filePath).getParent();
-            if (originalDir != null) {
-                command.add("-I");
-                command.add(originalDir);
-            }
-            command.add(tempFile.toString());
-
-            ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-
-            // Read all output (diagnostics go to stderr, merged via redirectErrorStream)
-            List<String> outputLines = new ArrayList<>();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    outputLines.add(line);
-                }
-            }
-
-            boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                diagnostics.add(new DxcDiagnostic(0, 0, "warning", "DXC timed out after 30 seconds."));
-                return diagnostics;
-            }
-
-            // Parse output lines for diagnostics
-            for (String line : outputLines) {
-                String trimmed = line.trim();
-                
-                // Skip empty lines
-                if (trimmed.isEmpty()) continue;
-                
-                // Skip <built-in> diagnostics from DXC internals
-                if (trimmed.contains("<built-in>")) continue;
-                
-                // Suppress missing entry point error — expected for non-main shader files
-                if (trimmed.contains("missing entry point definition")) continue;
-                
-                Matcher m = DIAG_PATTERN.matcher(trimmed);
-                if (m.matches()) {
-                    int diagLine = m.group(1) != null ? Integer.parseInt(m.group(1)) : 0;
-                    int diagCol = m.group(2) != null ? Integer.parseInt(m.group(2)) : 0;
-                    String severity = m.group(3);
-                    String message = m.group(4);
-
-                    // Filter DXC false positive: "parameter 'X' is not used" when X
-                    // actually appears elsewhere in the source (common with inout params)
-                    if ("warning".equals(severity)) {
-                        Matcher up = UNUSED_PARAM_PATTERN.matcher(message);
-                        if (up.find()) {
-                            String paramName = up.group(1);
-                            // Check if param name is used as "paramName." (member access) in the source
-                            if (info.fileContent.contains(paramName + ".")) {
-                                continue;
-                            }
-                        }
-                    }
-
-                    // Only add valid diagnostics (with line/column info)
-                    if (diagLine > 0) {
-                        diagnostics.add(new DxcDiagnostic(diagLine, diagCol, severity, message));
-                    } else {
-                        LOG.debug("Skipping diagnostic without line info: " + message);
-                    }
-                } else if (!trimmed.isEmpty() && !trimmed.startsWith("note:")) {
-                    // Log unparseable lines for debugging (except note continuations)
-                    LOG.debug("Could not parse diagnostic line: " + trimmed);
-                }
-            }
-
-            // If DXC exited with error but we didn't parse any diagnostics, show raw output
-            if (process.exitValue() != 0 && diagnostics.isEmpty() && !outputLines.isEmpty()) {
-                String rawOutput = String.join(" | ", outputLines).trim();
-                if (!rawOutput.isEmpty()) {
-                    diagnostics.add(new DxcDiagnostic(0, 0, "error", rawOutput));
-                }
-            }
-
-            return diagnostics;
-
+            ProgressManager.checkCanceled();
+            String output = Files.readString(outputFile, StandardCharsets.UTF_8);
+            return new ValidationResult(info, HlslDxcDiagnostics.parse(output, process.exitValue(), tempFile,
+                    info.filePath, info.source.hasOption("entry"), info.settings.validateIncludeFiles));
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ProcessCanceledException(e);
         } catch (Exception e) {
-            LOG.warn("DXC validation failed: " + e.getMessage(), e);
-            diagnostics.add(new DxcDiagnostic(0, 0, "info",
-                    "DXC execution failed: " + e.getMessage()));
-            return diagnostics;
+            LOG.warn("DXC validation failed", e);
+            return message(info, "DXC execution failed: " + e.getMessage());
         } finally {
-            if (tempFile != null) {
-                try { Files.deleteIfExists(tempFile); } catch (Exception ignored) {}
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+                try {
+                    process.waitFor(1, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            if (tempDirectory != null) {
+                deleteTemporaryFile(tempDirectory.resolve("source.hlsl"));
+                deleteTemporaryFile(tempDirectory.resolve("shader.dxil"));
+                deleteTemporaryFile(tempDirectory.resolve("diagnostics.txt"));
+                deleteTemporaryFile(tempDirectory);
             }
         }
     }
 
+    static List<String> buildCommand(CollectedInfo info, String executable, Path sourceFile, Path objectFile) {
+        HlslDxcSettings.State settings = info.settings;
+        String profile = info.source.option("profile", settings.defaultProfile);
+        List<String> command = new ArrayList<>(List.of(executable, "-T", profile));
+        // Library profiles have no single entry point.
+        if (!profile.startsWith("lib_")) {
+            command.add("-E");
+            command.add(info.source.option("entry", settings.defaultEntryPoint));
+        }
+        command.addAll(List.of("-nologo", "-Vd"));
+        // `-Weverything` is clang's entire warning set (hundreds of groups) and drowns idiomatic HLSL in noise,
+        // so it is opt-in. DXC's own defaults are quiet, and each extra group is enabled explicitly.
+        boolean everything = settings.extraClangWarnings;
+        if (everything) {
+            command.addAll(List.of("-Weverything", "-Wno-unused-macros", "-Wno-missing-prototypes",
+                    "-Wno-missing-variable-declarations"));
+        }
+        addWarningGroup(command, everything, settings.warnUnusedVariable, "-Wunused-variable");
+        addWarningGroup(command, everything, settings.warnUnusedParameter, "-Wunused-parameter");
+        addWarningGroup(command, everything, settings.warnUnreachableCode,
+                "-Wunreachable-code", "-Wunreachable-code-return");
+        addWarningGroup(command, everything, settings.warnUninitializedVariable, "-Wuninitialized");
+        // DXC reports "implicit truncation of vector type" under -Wconversion. There is no -Wimplicit-truncation
+        // (or -Wpayload-access-warning) in DXC: passing them only adds "unknown warning option" lines.
+        addWarningGroup(command, everything, settings.warnConversion || settings.warnImplicitTruncation, "-Wconversion");
+        addWarningGroup(command, everything, settings.warnEffectsSyntax, "-Weffects-syntax");
+        String hlslVersion = info.source.option("hv", settings.hlslVersion);
+        if (hlslVersion != null && !hlslVersion.isBlank()) command.addAll(List.of("-HV", hlslVersion));
+        if (settings.treatWarningsAsErrors) command.add("-WX");
+        // Macros the build system passes: without them a standalone compile reports phantom errors.
+        Set<String> defined = new HashSet<>();
+        for (String define : parseDefines(settings.preprocessorDefines)) {
+            defined.add(HlslShaderMacros.nameOf(define));
+            command.add("-D" + define);
+        }
+        if (settings.autoDetectBuildMacros) {
+            // An explicitly configured macro always wins over what was detected in the project.
+            for (String macro : info.buildMacros) {
+                if (defined.add(HlslShaderMacros.nameOf(macro))) command.add("-D" + macro);
+            }
+        }
+        if (settings.additionalArgs != null && !settings.additionalArgs.isBlank()) {
+            command.addAll(ParametersListUtil.parse(settings.additionalArgs));
+        }
+        String originalDirectory = new File(info.filePath).getAbsoluteFile().getParent();
+        if (originalDirectory != null) command.addAll(List.of("-I", originalDirectory));
+        command.addAll(List.of("-Fo", objectFile.toString(), sourceFile.toString()));
+        return command;
+    }
+
+    /** Enables a warning group, or suppresses it when the full clang set is on and the group is unchecked. */
+    private static void addWarningGroup(List<String> command, boolean everything, boolean enabled, String... groups) {
+        if (enabled) {
+            command.addAll(List.of(groups));
+        } else if (everything) {
+            for (String group : groups) command.add("-Wno-" + group.substring("-W".length()));
+        }
+    }
+
+    /** Accepts "NAME=VALUE" entries separated by ';', ',' or whitespace. */
+    static List<String> parseDefines(String text) {
+        List<String> defines = new ArrayList<>();
+        if (text == null || text.isBlank()) return defines;
+        for (String entry : text.split("[;,\\s]+")) {
+            if (!entry.isBlank()) defines.add(entry.trim());
+        }
+        return defines;
+    }
+
+    private static ValidationResult message(CollectedInfo info, String text) {
+        return new ValidationResult(info, List.of(new HlslDxcDiagnostics.Diagnostic(0, 0, "info", text)));
+    }
+
+    private static void deleteTemporaryFile(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            LOG.debug("Could not delete DXC temporary file " + file, e);
+        }
+    }
+
     @Override
-    public void apply(@NotNull PsiFile file, List<DxcDiagnostic> diagnostics, @NotNull AnnotationHolder holder) {
-        if (diagnostics == null || diagnostics.isEmpty()) return;
+    public void apply(@NotNull PsiFile file, ValidationResult result, @NotNull AnnotationHolder holder) {
+        if (result == null || result.diagnostics().isEmpty() || !HlslDxcSettings.getInstance().matches(result.info().settings)) return;
+        VirtualFile virtualFile = file.getVirtualFile();
+        if (virtualFile == null) return;
+        Document document = FileDocumentManager.getInstance().getDocument(virtualFile);
+        if (document == null || !result.info().matches(virtualFile.getPath(), document.getModificationStamp(), document.getText())) return;
 
-        Document document = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
-        if (document == null) return;
-
-        for (DxcDiagnostic diag : diagnostics) {
-            HighlightSeverity severity = switch (diag.severity) {
+        int fileLevel = 0;
+        int suppressed = 0;
+        for (HlslDxcDiagnostics.Diagnostic diagnostic : result.diagnostics()) {
+            HighlightSeverity severity = switch (diagnostic.severity()) {
                 case "error" -> HighlightSeverity.ERROR;
                 case "warning" -> HighlightSeverity.WARNING;
                 case "info" -> HighlightSeverity.WEAK_WARNING;
                 default -> HighlightSeverity.INFORMATION;
             };
-
-            if (diag.line > 0 && diag.line <= document.getLineCount()) {
-                int lineStartOffset = document.getLineStartOffset(diag.line - 1);
-                int lineEndOffset = document.getLineEndOffset(diag.line - 1);
-
-                int startOffset = lineStartOffset;
-                if (diag.column > 0) {
-                    startOffset = Math.min(lineStartOffset + diag.column - 1, lineEndOffset);
+            if (diagnostic.line() == 0) {
+                // A pile of file-level annotations covers the top of the editor, so keep only a few.
+                if (++fileLevel > MAX_FILE_LEVEL_DIAGNOSTICS) {
+                    suppressed++;
+                    continue;
                 }
-                if (startOffset >= lineEndOffset) {
-                    startOffset = lineStartOffset;
-                }
-
-                TextRange range = new TextRange(startOffset, lineEndOffset);
-                holder.newAnnotation(severity, "DXC: " + diag.message)
-                        .range(range)
-                        .create();
-            } else {
-                // No line info — annotate the first line
-                if (document.getLineCount() > 0) {
-                    TextRange range = new TextRange(
-                            document.getLineStartOffset(0),
-                            document.getLineEndOffset(0));
-                    holder.newAnnotation(severity, "DXC: " + diag.message)
-                            .range(range)
-                            .create();
-                }
+                holder.newAnnotation(severity, annotated(diagnostic.message())).fileLevel().create();
+            } else if (diagnostic.line() <= document.getLineCount()) {
+                int lineStart = document.getLineStartOffset(diagnostic.line() - 1);
+                int lineEnd = document.getLineEndOffset(diagnostic.line() - 1);
+                int start = lineStart + HlslDxcDiagnostics.offsetForByteColumn(
+                        document.getImmutableCharSequence().subSequence(lineStart, lineEnd), diagnostic.column());
+                if (start == lineEnd) start = lineStart;
+                holder.newAnnotation(severity, annotated(diagnostic.message()))
+                        .range(new TextRange(start, lineEnd)).create();
             }
         }
+        if (suppressed > 0) {
+            holder.newAnnotation(HighlightSeverity.WEAK_WARNING,
+                    "DXC reported " + suppressed + " further file-level diagnostic(s).").fileLevel().create();
+        }
     }
 
-    private static String extractPragmaValue(String content, String pragmaKey, String defaultValue) {
-        Pattern p = Pattern.compile(
-                "^\\s*(?://)?\\s*#pragma\\s+hlsl\\s+" + Pattern.quote(pragmaKey) + "\\s+(\\S+)",
-                Pattern.MULTILINE
-        );
-        Matcher m = p.matcher(content);
-        if (m.find()) {
-            return m.group(1);
+    /**
+     * DXC compiles the shader standalone and cannot see the macros the build system passes, so an undeclared
+     * capitalised identifier is usually that, not a mistake in the shader.
+     */
+    private static String annotated(String message) {
+        Matcher matcher = UNDECLARED_IDENTIFIER.matcher(message);
+        if (matcher.find() && matcher.group(1).equals(matcher.group(1).toUpperCase(Locale.ROOT))) {
+            return "DXC: " + message + " — the build system may pass " + matcher.group(1)
+                    + " as a macro; add it under Settings → Tools → HLSL / DXC → Preprocessor defines.";
         }
-        return defaultValue;
-    }
-
-    private static boolean isInPath(String executable) {
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv == null) return false;
-        for (String dir : pathEnv.split(File.pathSeparator)) {
-            if (new File(dir, executable).isFile()) return true;
-            if (new File(dir, executable + ".exe").isFile()) return true;
-        }
-        return false;
+        return "DXC: " + message;
     }
 }

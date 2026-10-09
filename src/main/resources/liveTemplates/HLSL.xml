@@ -1,0 +1,15 @@
+<templateSet group="HLSL">
+    <template name="struct" value="struct $NAME$&#10;{&#10;    $END$&#10;};" description="Struct declaration" toReformat="true" toShortenFQNames="false">
+        <variable name="NAME" expression="" defaultValue="" alwaysStopAt="true"/>
+        <context>
+            <option name="HLSL" value="true"/>
+        </context>
+    </template>
+    <template name="cbuffer" value="cbuffer $NAME$ : register(b$REGISTER$)&#10;{&#10;    $END$&#10;};" description="Constant buffer declaration" toReformat="true" toShortenFQNames="false">
+        <variable name="NAME" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="REGISTER" expression="" defaultValue="0" alwaysStopAt="true"/>
+        <context>
+            <option name="HLSL" value="true"/>
+        </context>
+    </template>
+</templateSet>

@@ -45,6 +45,10 @@
                 language="HLSL"
                 implementationClass="com.hlsl.completion.HlslCompletionContributor"/>
 
+        <liveTemplateContext implementation="com.hlsl.templates.HlslTemplateContextType"/>
+
+        <defaultLiveTemplatesProvider implementation="com.hlsl.templates.HlslLiveTemplatesProvider"/>
+
         <psi.referenceContributor
                 language="HLSL"
                 implementation="com.hlsl.navigation.HlslReferenceContributor"/>

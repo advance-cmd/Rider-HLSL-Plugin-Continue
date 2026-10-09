@@ -15,6 +15,7 @@ public class HlslLexer extends LexerBase {
     private int tokenEnd;
     private IElementType tokenType;
     private int state; // 0 = normal, 1 = expecting struct/cbuffer/tbuffer name, 2 = after dot (field access)
+    private int tokenState; // State before the current token, used for incremental lexer restarts.
 
     private static final Set<String> STRUCT_DECLARING_KEYWORDS = Set.of(
             "struct", "cbuffer", "tbuffer", "class", "enum", "interface"
@@ -30,7 +31,7 @@ public class HlslLexer extends LexerBase {
             "if", "else", "for", "while", "do", "switch", "case", "default",
             "break", "continue", "return", "discard",
             // Storage/qualifier
-            "struct", "cbuffer", "tbuffer", "typedef", "extern", "static",
+            "struct", "cbuffer", "tbuffer", "class", "interface", "enum", "typedef", "extern", "static",
             "volatile", "inline", "shared", "groupshared", "uniform",
             "const", "row_major", "column_major", "packoffset", "register",
             "namespace",
@@ -184,7 +185,7 @@ public class HlslLexer extends LexerBase {
 
     @Override
     public int getState() {
-        return state;
+        return tokenState;
     }
 
     @Override
@@ -205,6 +206,7 @@ public class HlslLexer extends LexerBase {
     @Override
     public void advance() {
         tokenStart = tokenEnd;
+        tokenState = state;
         if (tokenStart >= bufferEnd) {
             tokenType = null;
             return;
@@ -256,6 +258,11 @@ public class HlslLexer extends LexerBase {
                 char pc = buffer.charAt(tokenEnd);
                 if (pc == '\\' && tokenEnd + 1 < bufferEnd && buffer.charAt(tokenEnd + 1) == '\n') {
                     tokenEnd += 2;
+                    continue;
+                }
+                if (pc == '\\' && tokenEnd + 2 < bufferEnd
+                        && buffer.charAt(tokenEnd + 1) == '\r' && buffer.charAt(tokenEnd + 2) == '\n') {
+                    tokenEnd += 3;
                     continue;
                 }
                 if (pc == '\n') break;
