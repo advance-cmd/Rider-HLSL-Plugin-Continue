@@ -123,6 +123,22 @@ public class HlslDocumentationTest extends BasePlatformTestCase {
         assertEquals("ApplyFog", element.getText());
     }
 
+    public void testHoveredOffsetResolvesToTheDeclaration() throws IOException {
+        myFixture.addFileToProject("LightingUtil.hlsl", load("LightingUtil.hlsl"));
+        String text = "#include \"LightingUtil.hlsl\"\nfloat3 c = ApplyFog(color, dist, fog, start, range);\n";
+        myFixture.configureByText("Deferred.hlsl", text);
+        CharSequence source = myFixture.getEditor().getDocument().getImmutableCharSequence();
+        HlslCompletionAnalysis.Declaration declaration =
+                HlslDocumentationLookup.declarationAt(myFixture.getFile(), source, text.indexOf("ApplyFog") + 1);
+        assertNotNull("the word under the mouse must resolve", declaration);
+        assertEquals("ApplyFog", declaration.name());
+        assertNull("empty space resolves to nothing",
+                HlslDocumentationLookup.declarationAt(myFixture.getFile(), source, text.indexOf('\n')));
+        assertTrue("the tooltip text carries the signature and the comment",
+                HlslDocumentationLookup.plainText(declaration).contains("ApplyFog(float3 color")
+                        && HlslDocumentationLookup.plainText(declaration).contains("线性雾"));
+    }
+
     private static String load(String name) throws IOException {
         try (InputStream in = HlslDocumentationTest.class.getResourceAsStream("/dx12/" + name)) {
             assertNotNull("missing test resource: /dx12/" + name, in);

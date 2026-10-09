@@ -42,7 +42,8 @@ public final class HlslDocumentationProvider implements DocumentationProvider {
                                                               int contextOffset) {
         if (file.getLanguage() != HlslLanguage.INSTANCE) return null;
         PsiElement candidate = contextElement != null ? contextElement : file.findElementAt(contextOffset);
-        return HlslDocumentationLookup.resolve(candidate) == null ? null : candidate;
+        return HlslDocumentationLookup.resolve(candidate, "legacy.getCustomDocumentationElement") == null
+                ? null : candidate;
     }
 
     /**
@@ -50,10 +51,15 @@ public final class HlslDocumentationProvider implements DocumentationProvider {
      * both candidates are tried and the identifier is read from the document.
      */
     private static @Nullable String documentationFor(@Nullable PsiElement element, @Nullable PsiElement original) {
+        return documentationFor(element, original, "legacy");
+    }
+
+    private static @Nullable String documentationFor(@Nullable PsiElement element, @Nullable PsiElement original,
+                                                     String entry) {
         HlslCompletionAnalysis.Declaration declaration =
-                HlslDocumentationLookup.resolve(original != null ? original : element);
+                HlslDocumentationLookup.resolve(original != null ? original : element, entry);
         if (declaration == null && element != original) {
-            declaration = HlslDocumentationLookup.resolve(element);
+            declaration = HlslDocumentationLookup.resolve(element, entry + "(element)");
         }
         return declaration == null ? null : HlslDocumentationLookup.html(declaration);
     }

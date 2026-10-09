@@ -18,9 +18,10 @@ public final class HlslDocumentationTargetProvider implements PsiDocumentationTa
     public @Nullable DocumentationTarget documentationTarget(@NotNull PsiElement element,
                                                             @Nullable PsiElement originalElement) {
         PsiElement symbol = originalElement != null ? originalElement : element;
-        HlslCompletionAnalysis.Declaration declaration = HlslDocumentationLookup.resolve(symbol);
+        HlslCompletionAnalysis.Declaration declaration =
+                HlslDocumentationLookup.resolve(symbol, "psiTargetProvider");
         if (declaration == null && symbol != element) {
-            declaration = HlslDocumentationLookup.resolve(element);
+            declaration = HlslDocumentationLookup.resolve(element, "psiTargetProvider(element)");
         }
         return declaration == null ? null : new HlslDocumentationTarget(symbol, declaration);
     }

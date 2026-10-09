@@ -5,16 +5,17 @@ import com.intellij.model.Pointer;
 import com.intellij.platform.backend.documentation.DocumentationResult;
 import com.intellij.platform.backend.documentation.DocumentationTarget;
 import com.intellij.platform.backend.presentation.TargetPresentation;
+import com.intellij.psi.PsiElement;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /** Documents one resolved declaration: the hover hint and the documentation popup text. */
 final class HlslDocumentationTarget implements DocumentationTarget {
 
-    private final com.intellij.psi.PsiElement element;
+    private final PsiElement element;
     private final HlslCompletionAnalysis.Declaration declaration;
 
-    HlslDocumentationTarget(com.intellij.psi.PsiElement element, HlslCompletionAnalysis.Declaration declaration) {
+    HlslDocumentationTarget(PsiElement element, HlslCompletionAnalysis.Declaration declaration) {
         this.element = element;
         this.declaration = declaration;
     }
@@ -29,14 +30,16 @@ final class HlslDocumentationTarget implements DocumentationTarget {
         return TargetPresentation.builder(declaration.text()).presentation();
     }
 
-    /** What plain mouse hover shows. */
+    /** What plain mouse hover shows; the hint is plain text, unlike the documentation popup. */
     @Override
     public @Nullable String computeDocumentationHint() {
-        return HlslDocumentationLookup.html(declaration);
+        HlslDocumentationLookup.log("target.computeDocumentationHint", declaration.name(), "returned");
+        return HlslDocumentationLookup.plainText(declaration);
     }
 
     @Override
     public @Nullable DocumentationResult computeDocumentation() {
+        HlslDocumentationLookup.log("target.computeDocumentation", declaration.name(), "returned");
         return DocumentationResult.documentation(HlslDocumentationLookup.html(declaration));
     }
 

@@ -58,6 +58,8 @@
         <platform.backend.documentation.psiTargetProvider
                 implementation="com.hlsl.documentation.HlslDocumentationTargetProvider"/>
 
+        <editorFactoryListener implementation="com.hlsl.documentation.HlslHoverTooltipRegistrar"/>
+
         <liveTemplateContext implementation="com.hlsl.templates.HlslTemplateContextType"/>
 
         <defaultLiveTemplatesProvider implementation="com.hlsl.templates.HlslLiveTemplatesProvider"/>
