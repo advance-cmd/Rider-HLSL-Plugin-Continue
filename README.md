@@ -108,7 +108,7 @@ back to *inherit* under **Settings → Editor → Color Scheme → HLSL**.
 // #pragma hlsl hv 2018
 ```
 
-### Build macros — read this if you see phantom errors
+### Build macros
 
 Your build system compiles the shader and passes macros that a standalone `dxc` run cannot see:
 
@@ -121,8 +121,7 @@ const D3D_SHADER_MACRO lightDefines[] = {
 ```
 
 Without them the plugin would report `use of undeclared identifier 'NUM_DIR_LIGHTS'` for code that is
-correct, and — worse — **silently skip every `#ifdef`-guarded block**, hiding real errors inside it (or
-inventing errors that only exist in the wrong configuration).
+correct, and would skip every `#ifdef`-guarded block.
 
 - **Detection is on by default**: the plugin reads the `D3D_SHADER_MACRO` tables of your project and passes
   the macros the shader mentions. Values that are runtime expressions (`extraLights.c_str()`) or that differ
@@ -133,19 +132,6 @@ inventing errors that only exist in the wrong configuration).
   `NUM_DIR_LIGHTS=1;NUM_SPOT_LIGHTS=1`
 - The settings page shows what detection resolved, which is the quickest way to confirm that a macro such as
   `FOG` really is defined for the compile
-
-### Which conversions HLSL accepts
-
-Some calls look wrong but are legal, so nothing is reported — that is DXC's language definition, not a
-missing check:
-
-| Call | Result |
-|---|---|
-| `ApplyFog(3, 2, 3, 4, 5)` where `float3`/`float4` parameters are expected | accepted: `int` converts to `float`, and a scalar is promoted (splatted) to a vector |
-| a `float` variable where `float3` is expected | accepted, same scalar promotion |
-| a `float4` where `float3` is expected | accepted, but DXC warns `implicit truncation of vector type` |
-| a `float2` where `float3` is expected | error: vectors are not widened |
-| too few or too many arguments | error, with the candidate's own explanation attached |
 
 ### Noise policy
 
