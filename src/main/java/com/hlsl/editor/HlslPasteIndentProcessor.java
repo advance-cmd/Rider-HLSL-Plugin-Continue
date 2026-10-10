@@ -142,16 +142,24 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
      * when the block's own indentation is measured against the target's.</p>
      */
     private static void align(@NotNull Editor editor, @NotNull Document document, int start, int end,
-                              @NotNull List<String> block) {
-        // A block pasted behind existing code gets a line of its own, so it is not glued to that code. A single
+                              @NotNull List<String> block) {        // A block pasted behind existing code gets a line of its own, so it is not glued to that code. A single
         // line that starts at column zero stays where it was put: it continues the line it is pasted into,
         // which is how a trailing comment is written.
         if (!isFirstOnLine(document, start) && startsABlock(block)) {
             int line = document.getLineNumber(start);
             String indent = HlslIndent.indentFor(editor, line);
+            // Code that has just opened a block puts the pasted text one level further in.
+            if (endsWithOpeningBrace(document, start)) indent = indent + HlslIndent.unit(editor);
+            // Whitespace the platform put in front of the pasted text is not part of what was copied.
+            int contentEnd = start;
+            CharSequence chars = document.getCharsSequence();
+            while (contentEnd > 0 && (chars.charAt(contentEnd - 1) == ' ' || chars.charAt(contentEnd - 1) == '\t')) {
+                contentEnd--;
+            }
+            if (contentEnd < start) document.deleteString(contentEnd, start);
+            start = contentEnd;
             document.insertString(start, "\n" + indent);
-            start = start + 1 + indent.length();
-        }
+            start = start + 1 + indent.length();        }
 
         // The pasted text is what the copied text was, so its length tells where the region ends. The platform
         // may have indented only part of it, and the report bounds end at the first line.
@@ -165,8 +173,7 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
 
         int copied = 0;
         // How many blocks the lines before this one have opened and not closed yet.
-        int depth = 0;
-        for (int line = first; line <= last; line++) {
+        int depth = 0;        for (int line = first; line <= last; line++) {
             int lineStart = document.getLineStartOffset(line);
             int lineEnd = document.getLineEndOffset(line);
             String stripped = document.getText(new TextRange(lineStart, lineEnd)).stripLeading();
@@ -193,8 +200,7 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
             if (!replacement.equals(current)) document.replaceString(lineStart, lineEnd, replacement);
             depth += netBraceDepth(stripped);
             copied++;
-        }
-    }
+        }    }
 
     /** How many blocks a line opens, one more for an opener than for a closer. */
     private static int netBraceDepth(@NotNull String line) {
@@ -229,6 +235,18 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
         return line.length() - line.stripLeading().length();
     }
 
+    /** True when the last code before the offset on its line is an opening brace. */
+    private static boolean endsWithOpeningBrace(@NotNull Document document, int offset) {
+        int lineStart = document.getLineStartOffset(document.getLineNumber(offset));
+        CharSequence text = document.getCharsSequence();
+        for (int i = Math.min(offset, text.length()) - 1; i >= lineStart; i--) {
+            char c = text.charAt(i);
+            if (Character.isWhitespace(c)) continue;
+            return c == '{';
+        }
+        return false;
+    }
+
     /** True when only indentation stands in front of the offset. */
     private static boolean isFirstOnLine(@NotNull Document document, int offset) {
         int lineStart = document.getLineStartOffset(document.getLineNumber(offset));
@@ -239,4 +257,5 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
         return true;
     }
 }
+
 
