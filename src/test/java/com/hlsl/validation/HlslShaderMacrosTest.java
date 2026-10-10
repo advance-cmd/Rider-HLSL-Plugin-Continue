@@ -11,7 +11,7 @@ import static org.junit.Assert.*;
 
 public class HlslShaderMacrosTest {
 
-    /** Shaped after the real LearnDX12 main.cpp, including a runtime-expression value and a terminator. */
+    /** Shaped after a real C++ build file, including a runtime-expression value and a terminator. */
     private static final String MAIN_CPP = """
             const std::string extraLights = std::to_string(mManyLights ? kExtraLights : 0);
             const D3D_SHADER_MACRO lightDefines[] = {

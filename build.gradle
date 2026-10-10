@@ -35,4 +35,23 @@ tasks {
     buildSearchableOptions {
         enabled = false
     }
+
+    test {
+        // The real shader sources used as fixtures are not in the repository (private project, git-ignored),
+        // so the tests that need them are skipped unless the sources are provided.
+        def shaderSources = System.getenv('HLSL_TEST_SOURCE_DIR')
+        def fixturesPresent = (shaderSources != null && !shaderSources.isBlank())
+                ? file(shaderSources).isDirectory()
+                : file('src/test/resources/dx12').isDirectory() || file('src/test/resources/samples').isDirectory()
+        if (!fixturesPresent) {
+            filter {
+                excludeTestsMatching '*HlslRealShaderTest'
+                excludeTestsMatching '*HlslSampleShaderTest'
+                excludeTestsMatching '*HlslCompletionContributorTest'
+                excludeTestsMatching '*HlslCompletionInIdeTest'
+                excludeTestsMatching '*HlslParameterInfoTest'
+                excludeTestsMatching '*HlslDocumentationTest'
+            }
+        }
+    }
 }

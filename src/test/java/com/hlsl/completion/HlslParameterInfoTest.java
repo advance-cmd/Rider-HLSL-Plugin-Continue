@@ -1,10 +1,9 @@
 package com.hlsl.completion;
 
+import com.hlsl.ShaderFixtures;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.Assert.*;
@@ -13,6 +12,12 @@ import static org.junit.Assert.*;
 public class HlslParameterInfoTest {
 
     private static final String CARET = "<caret>";
+
+    /** The real declarations below come from a shader source that is not in the repository. */
+    @org.junit.Before
+    public void skipWhenTheShadersAreNotAvailable() {
+        org.junit.Assume.assumeTrue("the real shader sources are not available", ShaderFixtures.available());
+    }
 
     /** Includes for the synthetic cases below. */
     private static final String LIGHTING = """
@@ -140,9 +145,6 @@ public class HlslParameterInfoTest {
     }
 
     private static String loadLightingUtil() throws IOException {
-        try (InputStream in = HlslParameterInfoTest.class.getResourceAsStream("/dx12/LightingUtil.hlsl")) {
-            assertNotNull("missing test resource: /dx12/LightingUtil.hlsl", in);
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        return ShaderFixtures.requireLightingUtil();
     }
 }

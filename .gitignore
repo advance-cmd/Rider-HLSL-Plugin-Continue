@@ -5,3 +5,8 @@ build/
 .idea/
 *.iml
 out/
+
+# Local shader sources used as test fixtures. They belong to a private project and are never published;
+# the tests that need them are skipped when the directory is absent.
+src/test/resources/dx12/
+src/test/resources/samples/

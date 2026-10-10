@@ -1,16 +1,21 @@
 package com.hlsl.completion;
 
+import com.hlsl.ShaderFixtures;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.Assert.*;
 
-/** End-to-end reproduction using the real LearnDX12 shader files. */
-public class HlslRealFileCompletionTest {
+/** End-to-end reproduction using the shader files of a real project, which are not part of the repository. */
+public class HlslSampleShaderTest {
+
+    /** The shader sources used here are not in the repository. */
+    @org.junit.Before
+    public void skipWhenTheShadersAreNotAvailable() {
+        org.junit.Assume.assumeTrue("the shader sources are not available", ShaderFixtures.available());
+    }
 
     @Test
     public void gPassMemberCompletionWithTypedPrefix() throws IOException {
@@ -49,9 +54,6 @@ public class HlslRealFileCompletionTest {
     }
 
     private static String load(String name) throws IOException {
-        try (InputStream in = HlslRealFileCompletionTest.class.getResourceAsStream("/samples/" + name)) {
-            assertNotNull("missing test resource: " + name, in);
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        return ShaderFixtures.require(name);
     }
 }

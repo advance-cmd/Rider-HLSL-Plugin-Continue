@@ -1,25 +1,27 @@
 package com.hlsl.completion;
 
 import com.hlsl.HlslFileType;
+import com.hlsl.ShaderFixtures;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 public class HlslCompletionContributorTest extends BasePlatformTestCase {
-    public void testUserDeferredShaderAgainstRealSources() throws Exception {
-        // Defaults to the verbatim copy of the user's shader sources, so this stays a regression test;
-        // HLSL_TEST_SOURCE_DIR points it at the live DX12 directory instead.
-        String directory = System.getenv("HLSL_TEST_SOURCE_DIR");
-        Path sourceDirectory = directory == null || directory.isBlank()
-                ? Path.of("src", "test", "resources", "dx12")
-                : Path.of(directory);
-        myFixture.addFileToProject("LightingUtil.hlsl", Files.readString(sourceDirectory.resolve("LightingUtil.hlsl")));
-        String shader = Files.readString(sourceDirectory.resolve("Deferred.hlsl"));
+
+    /** The real shader source used as a fixture is not in the repository. */
+    @org.junit.Before
+    public void skipWhenTheShadersAreNotAvailable() {
+        org.junit.Assume.assumeTrue("the real shader sources are not available", ShaderFixtures.available());
+    }
+
+    public void testFullShaderAgainstRealSources() throws Exception {
+        // Runs against the unmodified shader sources of a real project, which are not in the repository;
+        // the test is skipped when the fixtures are absent (see ShaderFixtures).
+        myFixture.addFileToProject("LightingUtil.hlsl", ShaderFixtures.requireLightingUtil());
+        String shader = ShaderFixtures.requireDeferred();
         String assignment = "Light L = gPass.Lights[kFirstExtraLight + id];";
         assertTrue("The expected real-world completion site must still be present", shader.contains(assignment));
         Set<String> passFields = Set.of("ViewProj", "ShadowTransform", "InvViewProj", "EyePosW", "padding",

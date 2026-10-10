@@ -35,7 +35,7 @@ public class HlslDxcDiagnosticsTest {
 
     @Test
     public void unviableOverloadNotesExplainTheErrorOnTheEditedFile() {
-        // The real LearnDX12 case: the call passes a light index where a Light value is required.
+        // Real compiler output: the call passes an index where a struct value is required.
         String output = temporarySource + ":127:16: error: no matching function for call to 'ComputePointLight'\n"
                 + originalSource.resolveSibling("LightingUtil.hlsl")
                 + ":119:8: note: candidate function not viable: no known conversion from 'uint' to 'Light'"

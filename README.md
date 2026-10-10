@@ -155,13 +155,14 @@ Requires JDK 17 or newer. Build the plugin with the Gradle `buildPlugin` task; t
 
 ## Tests
 
-Run the Gradle `test` task. 111 tests cover the lexer, the declaration reader behind completion, parameter
+Run the Gradle `test` task. The suite covers the lexer, the declaration reader behind completion, parameter
 info and hover documentation, the include index, DXC diagnostic parsing, and IDE-level fixtures that run the
 real completion contributor and parameter info handler.
 
-The fixtures include a snapshot of a full shader set, so completion and documentation are checked against
-real files rather than trimmed samples. Point the `HLSL_TEST_SOURCE_DIR` environment variable at another
-shader folder to run the same checks against those sources instead.
+Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
+sources are not in the repository, so the build skips the test classes that need them unless the sources are
+provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
+a directory that holds them. With the sources in place the whole suite runs — 111 tests.
 
 ## Compatibility
 

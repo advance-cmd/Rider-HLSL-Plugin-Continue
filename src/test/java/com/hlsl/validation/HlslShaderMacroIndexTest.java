@@ -13,7 +13,7 @@ import java.util.List;
  */
 public class HlslShaderMacroIndexTest extends BasePlatformTestCase {
 
-    /** Shaped after the real LearnDX12 main.cpp, including a runtime-valued entry. */
+    /** Shaped after a real C++ build file, including a runtime-valued entry. */
     private static final String MAIN_CPP = """
             const std::string extraLights = std::to_string(mManyLights ? kExtraLights : 0);
             const D3D_SHADER_MACRO lightDefines[] = {

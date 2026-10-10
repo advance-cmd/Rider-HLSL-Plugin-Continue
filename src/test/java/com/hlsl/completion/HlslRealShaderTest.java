@@ -1,21 +1,26 @@
 package com.hlsl.completion;
 
+import com.hlsl.ShaderFixtures;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.Assert.*;
 
 /**
- * Reproduction against the UNMODIFIED LearnDX12 shader sources (src/test/resources/dx12).
- * These are the files the user actually edits, so they must not be trimmed to make a test pass.
+ * Regression tests against the UNMODIFIED shader sources of a real project, which live outside the
+ * repository: they are the files the user actually edits, so they must not be trimmed to make a test pass.
+ * The tests are skipped when the fixtures are absent (see {@link ShaderFixtures}).
  */
-public class HlslLearnDx12Test {
+public class HlslRealShaderTest {
 
     private static final String FILE = "Deferred.hlsl";
+
+    @org.junit.Before
+    public void skipWhenTheShadersAreNotAvailable() {
+        org.junit.Assume.assumeTrue("the real shader sources are not available", ShaderFixtures.available());
+    }
 
     @Test
     public void gPassTypedPrefixOnRealFile() throws IOException {
@@ -85,20 +90,14 @@ public class HlslLearnDx12Test {
 
     /** Replaces the first occurrence of {@code needle} and places the caret at the end of {@code replacement}. */
     private static HlslCompletionAnalysis.Result analyzeAt(String needle, String replacement) throws IOException {
-        String source = load(FILE);
+        String source = ShaderFixtures.require(FILE);
         int at = source.indexOf(needle);
         assertTrue("needle not found in " + FILE + ": " + needle, at >= 0);
         String patched = source.substring(0, at) + replacement + source.substring(at + needle.length());
         int caret = patched.indexOf("<caret>");
         assertTrue("caret missing in replacement", caret >= 0);
         String withoutCaret = patched.substring(0, caret) + patched.substring(caret + "<caret>".length());
-        return HlslCompletionAnalysis.analyze(withoutCaret, caret, List.of(load("LightingUtil.hlsl")));
-    }
-
-    private static String load(String name) throws IOException {
-        try (InputStream in = HlslLearnDx12Test.class.getResourceAsStream("/dx12/" + name)) {
-            assertNotNull("missing test resource: /dx12/" + name, in);
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        return HlslCompletionAnalysis.analyze(withoutCaret, caret,
+                List.of(ShaderFixtures.requireLightingUtil()));
     }
 }

@@ -1,6 +1,7 @@
 package com.hlsl.completion;
 
 import com.hlsl.HlslLanguage;
+import com.hlsl.ShaderFixtures;
 import com.hlsl.parameterinfo.HlslParameterInfoHandler;
 import com.intellij.codeInsight.hint.ShowParameterInfoHandler;
 import com.intellij.codeInsight.lookup.LookupElement;
@@ -188,7 +189,7 @@ public class HlslCompletionInIdeTest extends BasePlatformTestCase {
     }
 
     private static String load(String name) throws IOException {
-        return readResource("/dx12/" + name);
+        return ShaderFixtures.require(name);
     }
 
     private static String readResource(String path) throws IOException {

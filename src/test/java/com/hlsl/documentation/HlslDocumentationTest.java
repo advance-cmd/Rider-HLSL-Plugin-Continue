@@ -1,5 +1,6 @@
 package com.hlsl.documentation;
 
+import com.hlsl.ShaderFixtures;
 import com.hlsl.completion.HlslCompletionAnalysis;
 import com.intellij.platform.backend.documentation.DocumentationTarget;
 import com.intellij.platform.backend.documentation.PsiDocumentationTargetProvider;
@@ -7,8 +8,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /** Hover documentation is built from the declaration text and the comment written above it. */
@@ -142,9 +141,6 @@ public class HlslDocumentationTest extends BasePlatformTestCase {
     }
 
     private static String load(String name) throws IOException {
-        try (InputStream in = HlslDocumentationTest.class.getResourceAsStream("/dx12/" + name)) {
-            assertNotNull("missing test resource: /dx12/" + name, in);
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        return ShaderFixtures.require(name);
     }
 }
