@@ -66,6 +66,8 @@ Press `Tab` after the abbreviation to expand it.
 - Errors and warnings from the DirectX Shader Compiler, inline as you type
 - The compiler's explanation is attached to the message, so a failed call reports why it failed and not
   just that it did
+- A diagnostic underlines the symbol it is about, not the rest of the line: the name is taken from the
+  compiler's own message, so a mistake in an expression no longer paints a red line to the semicolon
 
 ## Colours
 

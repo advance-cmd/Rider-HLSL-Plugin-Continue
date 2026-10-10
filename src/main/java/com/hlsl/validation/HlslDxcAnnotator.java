@@ -38,6 +38,8 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
     private static final int MAX_FILE_LEVEL_DIAGNOSTICS = 5;
     private static final Pattern UNDECLARED_IDENTIFIER =
             Pattern.compile("use of undeclared identifier '([A-Za-z_][A-Za-z0-9_]*)'");
+    /** How far along the line the name quoted in a message may stand from the position DXC reported. */
+    private static final int MAX_NAME_DISTANCE = 40;
 
     public static final class CollectedInfo {
         final String fileContent;
@@ -275,17 +277,69 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
             } else if (diagnostic.line() <= document.getLineCount()) {
                 int lineStart = document.getLineStartOffset(diagnostic.line() - 1);
                 int lineEnd = document.getLineEndOffset(diagnostic.line() - 1);
-                int start = lineStart + HlslDxcDiagnostics.offsetForByteColumn(
-                        document.getImmutableCharSequence().subSequence(lineStart, lineEnd), diagnostic.column());
+                CharSequence line = document.getImmutableCharSequence().subSequence(lineStart, lineEnd);
+                int start = lineStart + HlslDxcDiagnostics.offsetForByteColumn(line, diagnostic.column());
                 if (start == lineEnd) start = lineStart;
+                int end = spanEnd(line, start - lineStart, diagnostic) + lineStart;
                 holder.newAnnotation(severity, annotated(diagnostic.message()))
-                        .range(new TextRange(start, lineEnd)).create();
+                        .range(new TextRange(start, Math.max(start, end))).create();
             }
         }
         if (suppressed > 0) {
             holder.newAnnotation(HighlightSeverity.WEAK_WARNING,
                     "DXC reported " + suppressed + " further file-level diagnostic(s).").fileLevel().create();
         }
+    }
+
+    /**
+     * Where the underline has to stop. DXC reports a position but no length, so the name it quoted in its
+     * message is looked up near that position and only that name is underlined. Without a name to find, the
+     * annotation covers the identifier that starts there, and failing that a single character — never the
+     * rest of the line, which used to drag a red line from the mistake to the end of the statement.
+     */
+    static int spanEnd(CharSequence line, int start, HlslDxcDiagnostics.Diagnostic diagnostic) {
+        if (start < 0 || line.length() == 0) return 0;
+        String name = diagnostic.mentionedName();
+        if (name != null) {
+            int at = indexOfName(line, name, start);
+            if (at >= 0) return at + name.length();
+        }
+        int wordEnd = start;
+        while (wordEnd < line.length() && isIdentifierPart(line.charAt(wordEnd))) wordEnd++;
+        if (wordEnd > start) return wordEnd;
+        return Math.min(line.length(), start + 1);
+    }
+
+    /**
+     * The name close to the reported position. The search looks a little behind it, because a message about a
+     * redefinition can point at the type in front of the name rather than at the name itself, and it stops
+     * before the end of the statement so an unrelated name further along is never picked up.
+     */
+    private static int indexOfName(CharSequence line, String name, int from) {
+        int searchFrom = Math.max(0, from - 2);
+        int searchTo = Math.min(line.length(), from + MAX_NAME_DISTANCE);
+        int at = indexOf(line, name, searchFrom);
+        if (at < 0 || at + name.length() > searchTo) return -1;
+        // Only a whole identifier counts: the "c" of "float3 c" must not match the c inside "float3".
+        boolean startsWord = at == 0 || !isIdentifierPart(line.charAt(at - 1));
+        int after = at + name.length();
+        boolean endsWord = after >= line.length() || !isIdentifierPart(line.charAt(after));
+        return startsWord && endsWord ? at : -1;
+    }
+
+    private static int indexOf(CharSequence line, String name, int from) {
+        outer:
+        for (int i = from; i + name.length() <= line.length(); i++) {
+            for (int j = 0; j < name.length(); j++) {
+                if (line.charAt(i + j) != name.charAt(j)) continue outer;
+            }
+            return i;
+        }
+        return -1;
+    }
+
+    private static boolean isIdentifierPart(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
     }
 
     /**

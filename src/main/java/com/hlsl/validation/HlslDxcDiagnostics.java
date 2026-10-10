@@ -14,7 +14,36 @@ final class HlslDxcDiagnostics {
             "^(?:(.*):(\\d+):(\\d+):\\s*)?(?:dxc(?:\\.exe)?:\\s*)?(fatal error|error|warning|note):\\s*(.+)$");
     private static final int MAX_MESSAGE_LENGTH = 500;
 
-    record Diagnostic(int line, int column, String severity, String message) {}
+    /**
+     * A name the compiler quoted in its message. DXC names the symbol it is complaining about, which is what
+     * lets the annotation cover that name instead of the rest of the line.
+     */
+    private static final Pattern QUOTED_NAME = Pattern.compile("'([^']+)'|\"([^\"]+)\"|`([^`]+)`");
+
+    record Diagnostic(int line, int column, String severity, String message) {
+        /** The symbol the message is about, or {@code null} when the compiler did not name one. */
+        String mentionedName() {
+            Matcher matcher = QUOTED_NAME.matcher(message);
+            while (matcher.find()) {
+                for (int group = 1; group <= 3; group++) {
+                    String candidate = matcher.group(group);
+                    if (candidate != null && isIdentifier(candidate)) return candidate;
+                }
+            }
+            return null;
+        }
+    }
+
+    private static boolean isIdentifier(String text) {
+        if (text.isEmpty()) return false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (i == 0 ? !Character.isLetter(c) && c != '_' : !Character.isLetterOrDigit(c) && c != '_') {
+                return false;
+            }
+        }
+        return true;
+    }
 
     static List<Diagnostic> parse(String output, int exitCode, Path temporarySource,
                                   String originalFile, boolean explicitEntry, boolean includeOtherFiles) {
