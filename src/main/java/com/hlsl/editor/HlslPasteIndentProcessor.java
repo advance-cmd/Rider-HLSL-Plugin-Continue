@@ -43,11 +43,19 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
     /**
      * The processor needs no data of its own, but the platform skips every post processor whose extracted
      * data list is empty, so a marker is what gets it called at all.
+     *
+     * <p>Its flavour has to be one of its own: {@link DataFlavor#stringFlavor} makes the clipboard manager
+     * treat the marker as the clipboard's own text and cast it to {@code String}, which breaks copy and cut
+     * outright. The platform's own transferable data classes build their flavour the same way.</p>
      */
-    public static final class Marker implements TextBlockTransferableData {
+    public static final class Marker implements TextBlockTransferableData, java.io.Serializable {
+        private static final DataFlavor FLAVOR = new DataFlavor(
+                DataFlavor.javaJVMLocalObjectMimeType + ";class=" + Marker.class.getName(),
+                "HLSL paste indent marker");
+
         @Override
         public @NotNull DataFlavor getFlavor() {
-            return DataFlavor.stringFlavor;
+            return FLAVOR;
         }
     }
 
