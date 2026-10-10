@@ -17,6 +17,9 @@ that are compiled by a C++ build system which passes its own preprocessor macros
   own line is put back at the column of the line that opened the block. A control statement written without
   braces (`if`, `for`, `while`) indents its body as if the braces were there. Braces inside comments and
   strings are not counted, and the indentation unit comes from the IDE's code style, so tabs stay tabs
+- **Pasting keeps the block's shape**: a pasted block is moved to the indentation of the line it lands on
+  instead of being indented on top of the indentation it already carried, so pasting the same block twice
+  does not push it deeper every time
 
 ### Completion
 
