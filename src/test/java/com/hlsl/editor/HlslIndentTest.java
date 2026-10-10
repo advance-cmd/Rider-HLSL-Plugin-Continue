@@ -130,6 +130,95 @@ public class HlslIndentTest extends BasePlatformTestCase {
                 }""");
     }
 
+    /**
+     * The reported case: an if without braces, whose body must hang one level below the if instead of
+     * lining up with it.
+     */
+    public void testEnterAfterAnUnbracedIfIndentsItsBody() {
+        myFixture.configureByText(HlslFileType.INSTANCE, """
+                float4 PS_Deferred(float2 pixel) : SV_Target
+                {
+                    if (gDepthMap.Load(int3(pixel, 0)) >= 1.0f)
+                        return 1.0f;<caret>
+                }""");
+        enter();
+        myFixture.checkResult("""
+                float4 PS_Deferred(float2 pixel) : SV_Target
+                {
+                    if (gDepthMap.Load(int3(pixel, 0)) >= 1.0f)
+                        return 1.0f;
+                    <caret>
+                }""");
+    }
+
+    /** The same rule for an if written on one line with its body. */
+    public void testEnterAfterAnUnbracedIfOnOneLine() {
+        myFixture.configureByText(HlslFileType.INSTANCE, """
+                float f(float d)
+                {
+                    if (d > 0) return d;<caret>
+                }""");
+        enter();
+        myFixture.checkResult("""
+                float f(float d)
+                {
+                    if (d > 0) return d;
+                    <caret>
+                }""");
+    }
+
+    /** A loop header behaves like an if. */
+    public void testEnterAfterAnUnbracedLoopIndentsItsBody() {
+        myFixture.configureByText(HlslFileType.INSTANCE, """
+                void f()
+                {
+                    for (int i = 0; i < 4; i++)<caret>
+                }""");
+        enter();
+        myFixture.checkResult("""
+                void f()
+                {
+                    for (int i = 0; i < 4; i++)
+                        <caret>
+                }""");
+    }
+
+    /** The statement after an else hangs one level below the else, like any other body. */
+    public void testEnterOnAnUnbracedElse() {
+        myFixture.configureByText(HlslFileType.INSTANCE, """
+                float f(float d)
+                {
+                    if (d > 0)
+                        return 1;
+                    else<caret>
+                }""");
+        enter();
+        myFixture.checkResult("""
+                float f(float d)
+                {
+                    if (d > 0)
+                        return 1;
+                    else
+                        <caret>
+                }""");
+    }
+
+    /** A call ending in a closing parenthesis is not a control statement, so nothing is indented. */
+    public void testACallIsNotMistakenForAControlStatement() {
+        myFixture.configureByText(HlslFileType.INSTANCE, """
+                void f()
+                {
+                    ApplyFog(color, dist);<caret>
+                }""");
+        enter();
+        myFixture.checkResult("""
+                void f()
+                {
+                    ApplyFog(color, dist);
+                    <caret>
+                }""");
+    }
+
     private void enter() {
         myFixture.performEditorAction(IdeActions.ACTION_EDITOR_ENTER);
     }

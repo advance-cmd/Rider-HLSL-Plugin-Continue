@@ -14,8 +14,9 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 - Folding for blocks and block comments, `Ctrl+/` line comments, brace matching
 - Reformat Code through your own `clang-format`
 - **Indentation while typing**: Enter inside a block indents the new line, and a closing brace written on its
-  own line is put back at the column of the line that opened the block. Braces inside comments and strings
-  are not counted, and the indentation unit comes from the IDE's code style, so tabs stay tabs
+  own line is put back at the column of the line that opened the block. A control statement written without
+  braces (`if`, `for`, `while`) indents its body as if the braces were there. Braces inside comments and
+  strings are not counted, and the indentation unit comes from the IDE's code style, so tabs stay tabs
 
 ### Completion
 

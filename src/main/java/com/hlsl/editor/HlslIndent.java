@@ -5,10 +5,14 @@ import com.hlsl.psi.HlslTokenTypes;
 import com.intellij.application.options.CodeStyle;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import com.intellij.psi.tree.IElementType;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.Set;
 
 /**
  * Brace-aware indentation for HLSL.
@@ -27,7 +31,15 @@ public final class HlslIndent {
      * The indentation a line at {@code line} should have, as a string, without touching the document.
      */
     public static @NotNull String indentFor(@NotNull Editor editor, int line) {
-        Document document = editor.getDocument();
+        return computeIndentFor(editor, editor.getDocument(), line);
+    }
+
+    /** True when the line opens with a closing brace. */
+    public static boolean startsWithClosingBrace(@NotNull Document document, int line) {
+        return firstNonWhitespace(document, line) == '}';
+    }
+
+    private static @NotNull String computeIndentFor(@NotNull Editor editor, Document document, int line) {
 
         // A closing brace belongs to the construct it closes, so it is placed at the column of the line
         // that opened it instead of one level deeper.
@@ -40,6 +52,12 @@ public final class HlslIndent {
         // the next line is meant to be indented by.
         int depth = 0;
         for (int i = 0; i < line; i++) depth += depthOf(document, i);
+
+        // A statement that continues the line above it sits one level deeper: the body of an unbraced if, or
+        // the else of an if / else chain, which lines up with the if instead.
+        String hanging = continuesPreviousLine(document, line)
+                ? hangingIndent(editor, document, line, depth) : null;
+        if (hanging != null) return hanging;
         return unit(editor).repeat(Math.max(0, depth));
     }
 
@@ -64,6 +82,76 @@ public final class HlslIndent {
     public static boolean isFirstOnLine(@NotNull Document document, int offset) {
         return isBlank(document.getCharsSequence(),
                 document.getLineStartOffset(document.getLineNumber(offset)), offset);
+    }
+
+    /** Keywords whose body is a single statement when no brace follows. */
+    private static final Set<String> CONTROL_KEYWORDS = Set.of("if", "for", "while", "switch", "foreach");
+
+    /**
+     * True when the line is a statement that continues the line above it: either the body of a control
+     * statement written without braces, or the {@code else} of an if / else chain.
+     */
+    private static boolean continuesPreviousLine(Document document, int line) {
+        if (line == 0) return false;
+        String previousLine = lineText(document, line - 1).trim();
+        if (previousLine.endsWith("{")) return false;
+        // The body of an unbraced control statement, and the statement after an else, hang below it.
+        return opensWith(previousLine, "else") || endsWithControlHeader(previousLine);
+    }
+
+    /**
+     * The indentation of a statement that is the body of an unbraced control statement above it, or
+     * {@code null} when the line does not continue anything.
+     */
+    private static @Nullable String hangingIndent(Editor editor, Document document, int line, int depth) {
+        String previousLine = lineText(document, line - 1).trim();
+        if (!opensWith(previousLine, "else") && !endsWithControlHeader(previousLine)) return null;
+        return unit(editor).repeat(Math.max(0, depth + 1));
+    }
+
+    /** True when the trimmed line opens with the given keyword, sparing {@code elsewhere} and the like. */
+    private static boolean opensWith(@NotNull String trimmed, @NotNull String keyword) {
+        if (!trimmed.startsWith(keyword)) return false;
+        return trimmed.length() == keyword.length()
+                || !Character.isLetterOrDigit(trimmed.charAt(keyword.length()));
+    }
+
+    /** True when the line, read as code, ends the header of a control statement, as {@code if (x)} does. */
+    private static boolean endsWithControlHeader(String trimmed) {
+        if (!trimmed.endsWith(")")) return false;
+        return startsWithKeywordBeforeParen(trimmed);
+    }
+
+    /**
+     * True when a control keyword opens the statement and the parenthesis that ends it belongs to that
+     * keyword, which is what separates {@code if (dist > 0)} from a call such as {@code ApplyFog(a, b)}.
+     */
+    private static boolean startsWithKeywordBeforeParen(String trimmed) {
+        String header = trimmed.contains("{") ? trimmed.substring(0, trimmed.indexOf('{')) : trimmed;
+        int paren = header.indexOf('(');
+        if (paren < 0) return false;
+        String before = header.substring(0, paren).trim();
+        if (before.isEmpty()) return false;
+        return CONTROL_KEYWORDS.contains(before);
+    }
+
+    private static boolean startsWithWord(Document document, int line, @Nullable String word) {
+        return word != null && word.equals(firstWord(document, line));
+    }
+
+    private static boolean startsWithKeyword(Document document, int line, String keyword) {
+        return keyword.equals(firstWord(document, line));
+    }
+
+    private static @Nullable String firstWord(Document document, int line) {
+        String text = lineText(document, line).trim();
+        int end = 0;
+        while (end < text.length() && (Character.isLetterOrDigit(text.charAt(end)) || text.charAt(end) == '_')) end++;
+        return end == 0 ? null : text.substring(0, end);
+    }
+
+    private static @NotNull String lineText(Document document, int line) {
+        return document.getText(new TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line)));
     }
 
     private static boolean isBlank(CharSequence text, int start, int end) {

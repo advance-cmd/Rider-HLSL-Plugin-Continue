@@ -42,19 +42,37 @@ public class HlslSmartEnterHandler implements EnterHandlerDelegate {
                                    @NotNull DataContext dataContext) {
         if (file.getLanguage() != HlslLanguage.INSTANCE) return Result.Continue;
 
+        // Only a line the caret stands on alone is rewritten: a line that already carries code, and a
+        // closing brace, keep the indentation the platform gave them.
         Document document = editor.getDocument();
         int caret = editor.getCaretModel().getOffset();
-        if (!HlslIndent.isInsideEmptyBlock(document, caret)) return Result.Continue;
+        if (!isBlankBeforeCaret(document, caret)) return Result.Continue;
+        if (HlslIndent.startsWithClosingBrace(document, document.getLineNumber(caret))) return Result.Continue;
 
-        // Only the whitespace the caret stands on is rewritten, and only when it is whitespace: a line that
-        // already carries code is left alone.
-        int lineStart = document.getLineStartOffset(document.getLineNumber(caret));
-        if (!isBlank(document.getCharsSequence(), lineStart, caret)) return Result.Continue;
-
-        String indent = HlslIndent.indentFor(editor, document.getLineNumber(caret));
-        document.replaceString(lineStart, caret, indent);
-        editor.getCaretModel().moveToOffset(lineStart + indent.length());
+        applyIndent(editor, document, caret);
         return Result.Stop;
+    }
+
+    /**
+     * Leaves the caret line carrying exactly the indentation the plugin computed. The platform's own pass
+     * has already run by now and does not know about an unbraced {@code if} or an {@code else} clause, so its
+     * answer is replaced rather than trusted.
+     */
+    static void applyIndent(@NotNull Editor editor, @NotNull Document document, int caret) {
+        int line = document.getLineNumber(caret);
+        int lineStart = document.getLineStartOffset(line);
+        String indent = HlslIndent.indentFor(editor, line);
+        int end = caret;
+        CharSequence text = document.getCharsSequence();
+        while (end > lineStart && (text.charAt(end - 1) == ' ' || text.charAt(end - 1) == '\t')) end--;
+        document.replaceString(end, caret, "");
+        document.insertString(end, indent);
+        editor.getCaretModel().moveToOffset(end + indent.length());
+    }
+
+    private static boolean isBlankBeforeCaret(@NotNull Document document, int caret) {
+        return isBlank(document.getCharsSequence(),
+                document.getLineStartOffset(document.getLineNumber(caret)), caret);
     }
 
     private static boolean isBlank(CharSequence text, int start, int end) {
