@@ -44,14 +44,26 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
      * The processor needs no data of its own, but the platform skips every post processor whose extracted
      * data list is empty, so a marker is what gets it called at all.
      *
-     * <p>Its flavour has to be one of its own: {@link DataFlavor#stringFlavor} makes the clipboard manager
-     * treat the marker as the clipboard's own text and cast it to {@code String}, which breaks copy and cut
-     * outright. The platform's own transferable data classes build their flavour the same way.</p>
+     * <p>Its flavour has to be one of its own. With {@link DataFlavor#stringFlavor} the clipboard manager
+     * takes the marker for the clipboard's text and casts it to {@code String}, which breaks copy and cut
+     * outright. The flavour is built from the MIME type alone: the constructors that take a human presentable
+     * name resolve the class through the context class loader, which does not know the plugin's classes and
+     * fails the whole plugin with "can't find specified class".</p>
      */
     public static final class Marker implements TextBlockTransferableData, java.io.Serializable {
-        private static final DataFlavor FLAVOR = new DataFlavor(
-                DataFlavor.javaJVMLocalObjectMimeType + ";class=" + Marker.class.getName(),
-                "HLSL paste indent marker");
+        private static final DataFlavor FLAVOR = createFlavor();
+
+        /** The class is resolved by the plugin's own class loader, not by whoever happens to be copying. */
+        private static DataFlavor createFlavor() {
+            try {
+                return new DataFlavor(
+                        DataFlavor.javaJVMLocalObjectMimeType + ";class=" + Marker.class.getName(),
+                        "HLSL paste indent marker",
+                        Marker.class.getClassLoader());
+            } catch (ClassNotFoundException e) {
+                throw new IllegalStateException("Could not build the marker flavour", e);
+            }
+        }
 
         @Override
         public @NotNull DataFlavor getFlavor() {

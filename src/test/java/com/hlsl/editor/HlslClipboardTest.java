@@ -53,6 +53,19 @@ public class HlslClipboardTest extends BasePlatformTestCase {
                 myFixture.getEditor().getDocument().getText());
     }
 
+    /**
+     * The flavour of the processor's marker must not look like plain text: the clipboard manager reads the
+     * clipboard as a string and casts whatever comes back, which blew up copy and cut in the IDE.
+     */
+    public void testTheMarkerFlavourIsNotTheTextFlavour() {
+        HlslPasteIndentProcessor.Marker marker = new HlslPasteIndentProcessor.Marker();
+        assertFalse("the marker must not claim to be the clipboard's text",
+                DataFlavor.stringFlavor.equals(marker.getFlavor()));
+        assertFalse(DataFlavor.stringFlavor.isMimeTypeEqual(marker.getFlavor()));
+        assertTrue("the flavour has to name the marker class, got: " + marker.getFlavor().getMimeType(),
+                marker.getFlavor().getMimeType().startsWith(DataFlavor.javaJVMLocalObjectMimeType));
+    }
+
     private String clipboardText() {
         try {
             Transferable contents = CopyPasteManager.getInstance().getContents();
