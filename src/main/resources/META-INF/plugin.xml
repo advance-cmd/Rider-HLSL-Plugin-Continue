@@ -65,6 +65,12 @@
 
         <typedHandler implementation="com.hlsl.parameterinfo.HlslParameterInfoTypedHandler"/>
 
+        <lineIndentProvider implementation="com.hlsl.editor.HlslLineIndentProvider"/>
+
+        <enterHandlerDelegate implementation="com.hlsl.editor.HlslSmartEnterHandler"/>
+
+        <typedHandler implementation="com.hlsl.editor.HlslClosingBraceHandler"/>
+
         <lang.documentationProvider
                 language="HLSL"
                 implementationClass="com.hlsl.documentation.HlslDocumentationProvider"/>
