@@ -126,53 +126,74 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
     }
 
     /**
-     * Writes every line of the pasted region at the target indentation plus its own indentation inside the
-     * block. The lines are matched in order; a line whose code does not show up where it is expected is left
-     * alone, so a paste that the platform rearranged is not damaged further.
+     * Re-indents what was pasted.
+     *
+     * <p>The platform has already inserted the text, bundling it around the caret line and indenting some of
+     * its lines. Which line of the pasted region belongs to which copied line cannot be told from the line
+     * numbering, so the code of each line is matched against the copied text instead, and a line that is only
+     * whitespace is dropped unless the copied text had one there too.</p>
      */
     private static void align(@NotNull Editor editor, @NotNull Document document, int start, int end,
                               @NotNull List<String> block) {
-        // Pasting behind existing code: the block would share a line with it, so it gets a line of its own.
-        if (!isFirstOnLine(document, start)) {
+        // A block pasted behind existing code gets a line of its own, so it is not glued to that code. A single
+        // line that starts at column zero stays where it was put: it continues the line it is pasted into,
+        // which is how a trailing comment is written.
+        if (!isFirstOnLine(document, start) && startsABlock(block)) {
             int line = document.getLineNumber(start);
             String indent = HlslIndent.indentFor(editor, line);
-            int lineStart = document.getLineStartOffset(line);
             document.insertString(start, "\n" + indent);
             start = start + 1 + indent.length();
-            end = start + (end - start);
         }
+
+        // The pasted text is what the copied text was, so its length tells where the region ends. The platform
+        // may have indented only part of it, and the report bounds end at the first line.
+        int originalLength = block.stream().mapToInt(String::length).sum() + Math.max(0, block.size() - 1);
+        end = Math.min(document.getTextLength(), Math.max(end, start + originalLength));
 
         int first = document.getLineNumber(start);
         int last = document.getLineNumber(Math.max(start, end - 1));
-        if (block.size() > last - first + 1) {
-            LOG.info("HLSL paste: " + block.size() + " copied lines became " + (last - first + 1)
-                    + " lines, leaving the indentation alone");
-            return;
-        }
-
         int targetIndent = HlslIndent.indentFor(editor, first).length();
-        // The block's own base indentation is what the target indentation replaces; only the extra
-        // indentation of a nested line inside the block is kept.
         int blockBaseIndent = baseIndentOf(block);
-        for (int i = 0; i < block.size(); i++) {
-            int line = first + i;
+
+        int copied = 0;
+        for (int line = first; line <= last; line++) {
             int lineStart = document.getLineStartOffset(line);
             int lineEnd = document.getLineEndOffset(line);
-            String current = document.getText(new TextRange(lineStart, lineEnd));
-            String wanted = block.get(i);
-            String wantedCode = wanted.stripLeading();
-            String stripped = current.stripLeading();
-            // The block's last line may share its line with code that followed the caret.
-            if (!stripped.startsWith(wantedCode)) {
-                LOG.info("HLSL paste: line " + line + " does not match the copied block, left alone");
+            String stripped = document.getText(new TextRange(lineStart, lineEnd)).stripLeading();
+            if (stripped.isEmpty()) {
+                // An empty line that the copied text does not have was added by the platform where it broke a
+                // line; it is not part of what was pasted, so it goes away again.
+                if (copied < block.size() && block.get(copied).isBlank()) {
+                    copied++;
+                    continue;
+                }
+                document.deleteString(lineStart, Math.min(document.getTextLength(), lineEnd + 1));
+                last--;
+                line--;
                 continue;
             }
-            int relative = Math.max(0, indentWidth(wanted) - blockBaseIndent);
-            String replacement = " ".repeat(targetIndent + relative) + stripped;
-            if (!replacement.equals(current)) {
-                document.replaceString(lineStart, lineEnd, replacement);
+            if (copied >= block.size() || !stripped.startsWith(block.get(copied).stripLeading())) {
+                LOG.info("HLSL paste: line " + line + " has no counterpart in the copied block, left alone");
+                break;
             }
+            int relative = Math.max(0, indentWidth(block.get(copied)) - blockBaseIndent);
+            String replacement = " ".repeat(targetIndent + relative) + stripped;
+            String current = document.getText(new TextRange(lineStart, lineEnd));
+            if (!replacement.equals(current)) document.replaceString(lineStart, lineEnd, replacement);
+            copied++;
         }
+    }
+
+    /**
+     * True when the copied text is code that belongs on its own line: it carries its own indentation, it has
+     * more than one line of content, or it is a comment on its own. Only a plain single-line fragment stays
+     * where it was put, which is how text is appended to a line.
+     */
+    private static boolean startsABlock(@NotNull List<String> block) {
+        if (block.isEmpty()) return false;
+        String first = block.get(0).stripLeading();
+        if (indentWidth(block.get(0)) > 0 || block.size() > 1) return true;
+        return first.startsWith("//") || first.startsWith("/*");
     }
 
     /** The narrowest indentation among the copied lines, which is where the block starts. */
