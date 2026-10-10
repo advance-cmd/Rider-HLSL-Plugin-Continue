@@ -46,17 +46,17 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
                 || "HlslTokenType.INSTANCE_METHOD_CALL".equals(tokenName);
         int usageOffset = element.getTextRange().getStartOffset();
 
-        LOG.warn("HLSL resolve: symbol=" + symbol + " token=" + tokenName
+        LOG.debug("HLSL resolve: symbol=" + symbol + " token=" + tokenName
                 + " file=" + (file.getVirtualFile() != null ? file.getVirtualFile().getPath() : "<in-memory>"));
 
         PsiElement found = findInFile(file, symbol, preferFunction, usageOffset);
         if (found != null) {
-            LOG.warn("HLSL resolve: found in current file at offset " + found.getTextRange().getStartOffset());
+            LOG.debug("HLSL resolve: found in current file at offset " + found.getTextRange().getStartOffset());
             return found;
         }
 
         PsiElement viaInclude = findInIncludes(file, symbol, preferFunction, new HashSet<>(), 0);
-        LOG.warn("HLSL resolve: include search " + (viaInclude != null
+        LOG.debug("HLSL resolve: include search " + (viaInclude != null
                 ? ("found in " + viaInclude.getContainingFile().getVirtualFile().getPath())
                 : "returned null"));
         return viaInclude;
@@ -101,16 +101,16 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
             String includePath = m.group(1);
             VirtualFile included = baseDir.findFileByRelativePath(includePath);
             if (included == null || !included.exists() || included.isDirectory()) {
-                LOG.warn("HLSL include: cannot resolve '" + includePath + "' from " + baseDir.getPath());
+                LOG.debug("HLSL include: cannot resolve '" + includePath + "' from " + baseDir.getPath());
                 continue;
             }
             PsiFile includedPsi = PsiManager.getInstance(file.getProject()).findFile(included);
             if (includedPsi == null) {
-                LOG.warn("HLSL include: PsiManager.findFile returned null for " + included.getPath());
+                LOG.debug("HLSL include: PsiManager.findFile returned null for " + included.getPath());
                 continue;
             }
 
-            LOG.warn("HLSL include: searching " + included.getPath() + " for '" + symbol + "'");
+            LOG.debug("HLSL include: searching " + included.getPath() + " for '" + symbol + "'");
             PsiElement found = findInFile(includedPsi, symbol, preferFunction, Integer.MAX_VALUE);
             if (found != null) return found;
 
@@ -260,3 +260,4 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
         return new Object[0];
     }
 }
+

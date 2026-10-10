@@ -104,6 +104,10 @@ public final class HlslCompletionAnalysis {
             "InterlockedAdd", "InterlockedAnd", "InterlockedCompareExchange", "InterlockedCompareStore",
             "InterlockedExchange", "InterlockedMax", "InterlockedMin", "InterlockedOr", "InterlockedXor");
     private static final Pattern VECTOR = Pattern.compile("(bool|int|uint|half|float|double|min16float|min10float|min16int|min12int|min16uint)([1-4])");
+    /** Scalar types, which carry the same one-component swizzles as a vector of width one. */
+    private static final Set<String> SCALAR_TYPES =
+            Set.of("bool", "int", "uint", "half", "float", "double", "min16float", "min10float", "min16int",
+                    "min12int", "min16uint");
 
     private HlslCompletionAnalysis() { }
 
@@ -293,24 +297,45 @@ public final class HlslCompletionAnalysis {
     }
 
     private static Map<String, Candidate> members(String type, Map<String, Map<String, Candidate>> structures) {
-        if (type == null || type.endsWith("[]")) return Map.of();
-        String base = baseType(type);
-        String argument = typeArgument(type);
+        if (type == null) return Map.of();
         // ConstantBuffer<T> exposes the fields of T, whereas every other resource type exposes intrinsics.
-        Map<String, Candidate> fields = structures.get(type);
-        if (fields == null && argument != null) fields = structures.get(argument);
-        if (fields == null) fields = structures.get(base);
+        Map<String, Candidate> fields = declaredMembers(type, structures);
         if (fields != null) return fields;
-        Map<String, Candidate> intrinsics = intrinsicMembers(base, argument == null ? "float4" : argument);
+        String base = baseType(type);
+        Map<String, Candidate> intrinsics = intrinsicMembers(base, elementTypeOf(type));
         if (!intrinsics.isEmpty()) return intrinsics;
         Matcher vector = VECTOR.matcher(base);
-        if (!vector.matches()) return Map.of();
-        int width = Integer.parseInt(vector.group(2));
-        Map<String, Candidate> swizzles = new LinkedHashMap<>();
-        for (String alphabet : List.of("xyzw", "rgba")) {
-            addSwizzles(swizzles, alphabet.substring(0, width), "", vector.group(1));
+        if (vector.matches()) {
+            return swizzles(vector.group(1), Integer.parseInt(vector.group(2)));
         }
-        return swizzles;
+        // A plain float or int has the same one-component swizzles as float1.
+        if (SCALAR_TYPES.contains(base)) return swizzles(base, 1);
+        return Map.of();
+    }
+
+    /** The swizzle members of a vector of this width, in both the xyzw and the rgba alphabet. */
+    private static Map<String, Candidate> swizzles(String scalar, int width) {
+        Map<String, Candidate> result = new LinkedHashMap<>();
+        for (String alphabet : List.of("xyzw", "rgba")) {
+            addSwizzles(result, alphabet.substring(0, width), "", scalar);
+        }
+        return result;
+    }
+
+    /** The fields a struct or constant buffer declares, or {@code null} when the type is not a structure. */
+    private static Map<String, Candidate> declaredMembers(String type, Map<String, Map<String, Candidate>> structures) {
+        if (type.endsWith("[]")) return null;
+        Map<String, Candidate> fields = structures.get(type);
+        String argument = typeArgument(type);
+        if (fields == null && argument != null) fields = structures.get(argument);
+        if (fields == null) fields = structures.get(baseType(type));
+        return fields;
+    }
+
+    /** The element type of a resource: {@code Texture2D<float4>} has {@code float4}, a scalar has float4. */
+    private static String elementTypeOf(String type) {
+        String argument = typeArgument(type);
+        return argument == null ? "float4" : argument;
     }
 
     /** {@code Texture2D<float>} becomes {@code Texture2D}; a plain name is returned unchanged. */
@@ -695,9 +720,12 @@ public final class HlslCompletionAnalysis {
         boolean name(int i) {
             if (i < 0 || i >= tokens.size()) return false;
             IElementType type = tokens.get(i).type;
+            // A type keyword can name a call as well: `float3(...)`, `int2(...)` and `uint2(...)` are
+            // constructors, and an expression such as gGBuffer1[uint2(pixel)] is built out of one.
             return type == HlslTokenTypes.IDENTIFIER || type == HlslTokenTypes.STRUCT_NAME
                     || type == HlslTokenTypes.FUNCTION_CALL || type == HlslTokenTypes.FIELD_ACCESS
-                    || type == HlslTokenTypes.SEMANTIC || type == HlslTokenTypes.BUILTIN_FUNCTION;
+                    || type == HlslTokenTypes.SEMANTIC || type == HlslTokenTypes.BUILTIN_FUNCTION
+                    || type == HlslTokenTypes.INSTANCE_METHOD_CALL || type == HlslTokenTypes.TYPE_KEYWORD;
         }
 
         int before(int offset) {
@@ -758,6 +786,23 @@ public final class HlslCompletionAnalysis {
             return symbol != null && symbol.kind == Kind.TYPE;
         }
 
+        /**
+         * The type a built-in name produces when it is called. {@code float3(...)} and {@code int2(...)} are
+         * constructors that yield their own type, and a resource method such as {@code Load} or {@code Sample}
+         * yields the element type of the resource it is called on, so {@code gGBuffer1.Load(...).} can offer
+         * swizzles even though no declaration of {@code Load} exists anywhere.
+         */
+        String builtinResultType(String name, String receiverType,
+                                 Map<String, Map<String, Candidate>> structures) {
+            Matcher vector = VECTOR.matcher(name);
+            if (vector.matches()) return name;
+            // A resource method needs its receiver: without a known type there is nothing to ask, and
+            // guessing float4 here would offer swizzles that the resource may not even have.
+            if (receiverType == null) return null;
+            Candidate method = members(receiverType, structures).get(name);
+            return method == null || method.type == null || method.type.equals("void") ? null : method.type;
+        }
+
         String expressionType(int end, Map<String, Candidate> visible, Map<String, Map<String, Candidate>> structures) {
             if (is(end, "]")) {
                 Integer open = pairs.get(end);
@@ -768,21 +813,17 @@ public final class HlslCompletionAnalysis {
                 for (String buffer : List.of("StructuredBuffer<", "RWStructuredBuffer<", "Buffer<", "RWBuffer<")) {
                     if (receiver.startsWith(buffer) && receiver.endsWith(">")) return receiver.substring(buffer.length(), receiver.length() - 1);
                 }
+                // Indexing a resource such as Texture2D<float4> or RWTexture2D<float> yields its element type.
+                String element = typeArgument(receiver);
+                if (element != null) return element;
                 Matcher vector = VECTOR.matcher(receiver);
                 return vector.matches() ? vector.group(1) : null;
             }
             if (is(end, ")")) {
                 // A call yields its callee's return type, which keeps `tex.Sample(s, uv).rgb` resolvable.
                 Integer open = pairs.get(end);
-                if (open == null || open == 0 || !name(open - 1)) return null;
-                Candidate callee = null;
-                if (is(open - 2, ".")) {
-                    String receiver = expressionType(open - 3, visible, structures);
-                    callee = members(receiver, structures).get(tokens.get(open - 1).text);
-                }
-                if (callee == null || callee.kind == Kind.TYPE || callee.kind == Kind.VARIABLE) return null;
-                String returned = callee.type;
-                return returned == null || returned.equals("void") ? null : returned;
+                if (open == null || open == 0) return null;
+                return callResultType(open, visible, structures);
             }
             if (!name(end)) return null;
             Candidate symbol;
@@ -791,6 +832,39 @@ public final class HlslCompletionAnalysis {
                 symbol = members(receiver, structures).get(tokens.get(end).text);
             } else symbol = visible.get(tokens.get(end).text);
             return symbol == null || symbol.kind == Kind.FUNCTION || symbol.kind == Kind.TYPE ? null : symbol.type;
+        }
+
+        /**
+         * The type the call with this opening parenthesis produces. The callee is either a method called on
+         * the receiver in front of it, or a name of its own: a declared function, or a constructor and
+         * resource method the language provides without a declaration.
+         */
+        String callResultType(int open, Map<String, Candidate> visible,
+                             Map<String, Map<String, Candidate>> structures) {
+            if (open == 0) return null;
+            String calleeName = tokens.get(open - 1).text;
+            if (is(open - 2, ".")) {
+                String receiver = expressionType(open - 3, visible, structures);
+                Candidate declared = members(receiver, structures).get(calleeName);
+                if (declared != null) {
+                    if (declared.kind == Kind.TYPE || declared.kind == Kind.VARIABLE) return null;
+                    return useable(declared.type);
+                }
+                // A resource method such as Load or Sample is an intrinsic: its result type follows from the
+                // type of the resource it is called on, not from any declaration.
+                return builtinResultType(calleeName, receiver, structures);
+            }
+            if (name(open - 1)) {
+                Candidate declared = visible.get(calleeName);
+                if (declared != null) return declared.kind == Kind.FUNCTION ? useable(declared.type) : null;
+            }
+            // A constructor such as `float3(...)` names a type rather than a function.
+            return builtinResultType(calleeName, null, structures);
+        }
+
+        /** The type a call produces, or {@code null} when it produces nothing a member can be read from. */
+        String useable(String type) {
+            return type == null || type.equals("void") ? null : type;
         }
     }
 }
