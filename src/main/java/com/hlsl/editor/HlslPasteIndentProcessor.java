@@ -1,6 +1,8 @@
 package com.hlsl.editor;
 
 import com.hlsl.HlslLanguage;
+import com.hlsl.lexer.HlslLexer;
+import com.hlsl.psi.HlslTokenTypes;
 import com.intellij.codeInsight.editorActions.CopyPastePostProcessor;
 import com.intellij.codeInsight.editorActions.TextBlockTransferableData;
 import com.intellij.openapi.application.ApplicationManager;
@@ -14,6 +16,7 @@ import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.tree.IElementType;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -128,10 +131,15 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
     /**
      * Re-indents what was pasted.
      *
-     * <p>The platform has already inserted the text, bundling it around the caret line and indenting some of
-     * its lines. Which line of the pasted region belongs to which copied line cannot be told from the line
-     * numbering, so the code of each line is matched against the copied text instead, and a line that is only
-     * whitespace is dropped unless the copied text had one there too.</p>
+     * <p>The platform has already inserted the text and indented part of it, bundling the block with the
+     * indent of the line it landed on. Which pasted line belongs to which copied line cannot be told from the
+     * line numbering, so the code of each line is matched against the copied text instead, and a line that is
+     * only whitespace is dropped unless the copied text had one there too.</p>
+     *
+     * <p>Lines that carry braces are placed by the braces: a line that opens a block sits at the level of the
+     * statement it belongs to, and a line that closes one sits under that statement. That is what the code
+     * style of the file asks for, and it keeps a copied block from drifting inwards, which is what happens
+     * when the block's own indentation is measured against the target's.</p>
      */
     private static void align(@NotNull Editor editor, @NotNull Document document, int start, int end,
                               @NotNull List<String> block) {
@@ -152,10 +160,12 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
 
         int first = document.getLineNumber(start);
         int last = document.getLineNumber(Math.max(start, end - 1));
-        int targetIndent = HlslIndent.indentFor(editor, first).length();
-        int blockBaseIndent = baseIndentOf(block);
+        String baseIndent = HlslIndent.indentFor(editor, first);
+        String unit = HlslIndent.unit(editor);
 
         int copied = 0;
+        // How many blocks the lines before this one have opened and not closed yet.
+        int depth = 0;
         for (int line = first; line <= last; line++) {
             int lineStart = document.getLineStartOffset(line);
             int lineEnd = document.getLineEndOffset(line);
@@ -176,12 +186,31 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
                 LOG.info("HLSL paste: line " + line + " has no counterpart in the copied block, left alone");
                 break;
             }
-            int relative = Math.max(0, indentWidth(block.get(copied)) - blockBaseIndent);
-            String replacement = " ".repeat(targetIndent + relative) + stripped;
+            // A line that closes a block sits one level above the lines around it.
+            if (stripped.startsWith("}")) depth--;
+            String replacement = baseIndent + unit.repeat(Math.max(0, depth)) + stripped;
             String current = document.getText(new TextRange(lineStart, lineEnd));
             if (!replacement.equals(current)) document.replaceString(lineStart, lineEnd, replacement);
+            depth += netBraceDepth(stripped);
             copied++;
         }
+    }
+
+    /** How many blocks a line opens, one more for an opener than for a closer. */
+    private static int netBraceDepth(@NotNull String line) {
+        int depth = 0;
+        HlslLexer lexer = new HlslLexer();
+        lexer.start(line, 0, line.length(), 0);
+        while (lexer.getTokenType() != null) {
+            IElementType token = lexer.getTokenType();
+            if (token == HlslTokenTypes.LBRACE) {
+                depth++;
+            } else if (token == HlslTokenTypes.RBRACE) {
+                depth--;
+            }
+            lexer.advance();
+        }
+        return depth;
     }
 
     /**
@@ -194,16 +223,6 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
         String first = block.get(0).stripLeading();
         if (indentWidth(block.get(0)) > 0 || block.size() > 1) return true;
         return first.startsWith("//") || first.startsWith("/*");
-    }
-
-    /** The narrowest indentation among the copied lines, which is where the block starts. */
-    private static int baseIndentOf(@NotNull List<String> block) {
-        int minimum = Integer.MAX_VALUE;
-        for (String line : block) {
-            if (line.isBlank()) continue;
-            minimum = Math.min(minimum, indentWidth(line));
-        }
-        return minimum == Integer.MAX_VALUE ? 0 : minimum;
     }
 
     private static int indentWidth(@NotNull String line) {
@@ -220,3 +239,4 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
         return true;
     }
 }
+

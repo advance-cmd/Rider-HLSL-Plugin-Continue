@@ -8,16 +8,16 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import java.awt.datatransfer.StringSelection;
 
 /**
- * Pasting at the end of a line and pasting a block into a loop body, which are the two shapes that the
+ * Pasting at the end of a line, and pasting a block that carries its own braces: the two shapes the
  * platform's own handling gets wrong.
  */
 public class HlslPasteShapeTest extends BasePlatformTestCase {
 
     /**
-     * A comment pasted at the end of a line stays on that line. The platform used to put the copied text
-     * above the line because it indented the line and moved what was already there down.
+     * A comment pasted at the end of a line gets a line of its own at that indentation. The platform used to
+     * put the copied text above the line because it indented the line and moved what was already there down.
      */
-    public void testPastingASingleLineEndsUpOnThatLine() {
+    public void testPastingASingleLineComment() {
         paste("float4 PS(float2 aoPixel) : SV_Target\n{\n    int dir = 1;\n    int2 a = aoPixel + dir;<caret>\n}\n",
                 "// 左右（或上下）各 5 个邻居，i = 0 是自己");
         assertEquals("""
@@ -61,6 +61,60 @@ public class HlslPasteShapeTest extends BasePlatformTestCase {
                     }
                 }
                 """, documentText());
+    }
+
+    /**
+     * The reported shape: a block copied with its braces, pasted into a function body. The braces have to end
+     * up at the level of the statement they belong to, not one level deeper, and the body between them one
+     * level below that.
+     */
+    public void testPastingABracedBlockPlacesItsBracesByTheStatement() {
+        String block = """
+                if (i == 0 || (dot(neighborN, centerN) >= 0.8f && abs(neighborZ - centerZ) <= 0.2f))
+                        {
+                            sum += kBlurWeights[空32] * gAoMap.Load(int3(空33, 0)); // i 是 -5～5，数组下标是 0～10
+                            weightSum += kBlurWeights[空32];
+                        }""";
+        paste("float4 PS(float2 pixel) : SV_Target\n{\n    float sum = 0;\n    <caret>\n}\n", indent(block, 4));
+        assertEquals("""
+                float4 PS(float2 pixel) : SV_Target
+                {
+                    float sum = 0;
+                    if (i == 0 || (dot(neighborN, centerN) >= 0.8f && abs(neighborZ - centerZ) <= 0.2f))
+                    {
+                        sum += kBlurWeights[空32] * gAoMap.Load(int3(空33, 0)); // i 是 -5～5，数组下标是 0～10
+                        weightSum += kBlurWeights[空32];
+                    }
+                }
+                """, documentText());
+    }
+
+    /** The same block, pasted into a nested block, lands two levels in with its braces aligned. */
+    public void testPastingABracedBlockIntoANestedBlock() {
+        String block = """
+                if (i == 0 || (dot(neighborN, centerN) >= 0.8f && abs(neighborZ - centerZ) <= 0.2f))
+                        {
+                            sum += kBlurWeights[空32];
+                        }""";
+        paste("float4 PS(float2 pixel) : SV_Target\n{\n    if (pixel.x > 0)\n    {\n        <caret>\n    }\n}\n",
+                indent(block, 4));
+        assertEquals("""
+                float4 PS(float2 pixel) : SV_Target
+                {
+                    if (pixel.x > 0)
+                    {
+                        if (i == 0 || (dot(neighborN, centerN) >= 0.8f && abs(neighborZ - centerZ) <= 0.2f))
+                        {
+                            sum += kBlurWeights[空32];
+                        }
+                    }
+                }
+                """, documentText());
+    }
+
+    private static String indent(String text, int width) {
+        String pad = " ".repeat(width);
+        return pad + text.replace("\n", "\n" + pad);
     }
 
     private void paste(String before, String block) {

@@ -251,7 +251,7 @@ public final class HlslIndent {
     }
 
     /** One indentation step, using the project's code style or a four-space default. */
-    private static @NotNull String unit(@NotNull Editor editor) {
+    public static @NotNull String unit(@NotNull Editor editor) {
         CommonCodeStyleSettings.IndentOptions options =
                 CodeStyle.getIndentOptions(editor.getProject(), editor.getDocument());
         if (options != null) {
@@ -261,3 +261,4 @@ public final class HlslIndent {
         return " ".repeat(4);
     }
 }
+
