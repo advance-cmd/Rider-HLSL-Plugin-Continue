@@ -18,6 +18,12 @@ public final class HlslDocumentationTargetProvider implements PsiDocumentationTa
     public @Nullable DocumentationTarget documentationTarget(@NotNull PsiElement element,
                                                             @Nullable PsiElement originalElement) {
         PsiElement symbol = originalElement != null ? originalElement : element;
+        // A semantic, such as the SV_Target of "float4 main() : SV_Target", is explained rather than resolved
+        // as a declaration.
+        DocumentationTarget semantics = HlslSemanticsTarget.of(symbol);
+        if (semantics == null && symbol != element) semantics = HlslSemanticsTarget.of(element);
+        if (semantics != null) return semantics;
+
         HlslCompletionAnalysis.Declaration declaration =
                 HlslDocumentationLookup.resolve(symbol, "psiTargetProvider");
         if (declaration == null && symbol != element) {

@@ -36,6 +36,10 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 - Hover or `Ctrl+Q` on a function, variable, struct or macro shows its declaration together with the
   comment written above it, resolved through the include chain
 - Plain hover needs *Show quick documentation on hover* enabled in the IDE
+- **Semantics are explained on hover**: `SV_Target`, `SV_Position`, `TEXCOORD0`, `POSITION`, `register` and
+  the interpolation modifiers (`linear`, `centroid`, `nointerpolation`, `noperspective`, `sample`) say what
+  the pipeline does with them. The text comes in English and in Chinese, switchable under
+  **Settings → Tools → HLSL / DXC**
 - Parameter info opens by itself after a function name is completed and when `(` or `,` is typed, with the
   argument being edited highlighted and `↑`/`↓` to move through overloads
 

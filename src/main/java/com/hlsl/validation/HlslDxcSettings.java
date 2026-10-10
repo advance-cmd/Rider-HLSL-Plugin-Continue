@@ -46,6 +46,10 @@ public final class HlslDxcSettings implements PersistentStateComponent<HlslDxcSe
         public boolean warnPayloadAccess = false;
         public boolean warnEffectsSyntax = false;
         public String additionalArgs = "";
+        /** Explains semantics such as SV_Target or TEXCOORD when the mouse rests on them. */
+        public boolean semanticsHints = true;
+        /** Language of those explanations: "auto" follows the IDE, otherwise a language tag such as "zh". */
+        public String hintLanguage = "auto";
     }
 
     private State state = new State();
@@ -87,7 +91,9 @@ public final class HlslDxcSettings implements PersistentStateComponent<HlslDxcSe
                 && state.warnImplicitTruncation == snapshot.warnImplicitTruncation
                 && state.warnConversion == snapshot.warnConversion
                 && state.warnPayloadAccess == snapshot.warnPayloadAccess
-                && state.warnEffectsSyntax == snapshot.warnEffectsSyntax;
+                && state.warnEffectsSyntax == snapshot.warnEffectsSyntax
+                && state.semanticsHints == snapshot.semanticsHints
+                && Objects.equals(state.hintLanguage, snapshot.hintLanguage);
     }
 
     public String getDxcPath() { return state.dxcPath; }
@@ -137,6 +143,14 @@ public final class HlslDxcSettings implements PersistentStateComponent<HlslDxcSe
 
     public String getAdditionalArgs() { return state.additionalArgs; }
     public void setAdditionalArgs(String args) { state.additionalArgs = args; }
+
+    /** Whether semantics such as SV_Target are explained on hover. */
+    public boolean isSemanticsHintsEnabled() { return state.semanticsHints; }
+    public void setSemanticsHintsEnabled(boolean enabled) { state.semanticsHints = enabled; }
+
+    /** "auto" follows the IDE's own language; otherwise a language tag such as "en" or "zh". */
+    public String getHintLanguage() { return state.hintLanguage; }
+    public void setHintLanguage(String language) { state.hintLanguage = language; }
 
     public String getPreprocessorDefines() { return state.preprocessorDefines; }
     public void setPreprocessorDefines(String defines) { state.preprocessorDefines = defines; }

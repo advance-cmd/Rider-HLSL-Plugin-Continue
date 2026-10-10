@@ -11,6 +11,9 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
+            <li>Semantics such as SV_Target, SV_Position, TEXCOORD0, register and the interpolation modifiers
+                are explained on hover, in English or Chinese.</li>
+            <li>Enter indents blocks, and a closing brace written on its own line is aligned with the block.</li>
             <li>Custom colour palette for types, struct names, function calls and variables, adjustable per theme.</li>
             <li>Completion of struct members through the include chain, resource intrinsics and chained calls.</li>
             <li>Parameter info and hover documentation built from the declaration and the comment above it.</li>
@@ -70,6 +73,12 @@
         <enterHandlerDelegate implementation="com.hlsl.editor.HlslSmartEnterHandler"/>
 
         <typedHandler implementation="com.hlsl.editor.HlslClosingBraceHandler"/>
+
+        <!-- Declared before the provider that shows declarations: the platform stops at the first provider
+             that claims the hovered element, and semantics must not be resolved as declarations. -->
+        <lang.documentationProvider
+                language="HLSL"
+                implementationClass="com.hlsl.documentation.HlslSemanticsDocumentationProvider"/>
 
         <lang.documentationProvider
                 language="HLSL"

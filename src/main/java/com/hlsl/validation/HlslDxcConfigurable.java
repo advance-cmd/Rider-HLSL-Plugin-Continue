@@ -30,6 +30,12 @@ public class HlslDxcConfigurable implements Configurable {
     private JCheckBox autoDetectBuildMacrosCheckBox;
     private JCheckBox extraClangWarningsCheckBox;
     private JTextField additionalArgsField;
+    private JCheckBox semanticsHintsCheckBox;
+    private JComboBox<String> hintLanguageCombo;
+
+    /** Language tags of the semantics hints, in the order they appear in the combo box. */
+    private static final String[] HINT_LANGUAGES = {"auto", "en", "zh"};
+    private static final String[] HINT_LANGUAGE_LABELS = {"Automatic (follow the IDE)", "English", "中文"};
 
     // Warning group checkboxes: flag name -> checkbox
     private final Map<String, JCheckBox> warningCheckBoxes = new LinkedHashMap<>();
@@ -60,6 +66,10 @@ public class HlslDxcConfigurable implements Configurable {
         extraClangWarningsCheckBox = new JCheckBox("Enable clang's full warning set (-Weverything)");
         extraClangWarningsCheckBox.setToolTipText("Hundreds of clang warning groups, most of which fire on correct HLSL. Off by default.");
         additionalArgsField = new JTextField();
+        semanticsHintsCheckBox = new JCheckBox("Explain semantics on hover (SV_Target, TEXCOORD, register, ...)");
+        semanticsHintsCheckBox.setToolTipText("Hovering a semantic shows what the pipeline does with it, resolved through the include chain like other documentation.");
+        hintLanguageCombo = new JComboBox<>(HINT_LANGUAGE_LABELS);
+        hintLanguageCombo.setToolTipText("Language of the semantics explanations.");
 
         // Warning group checkboxes
         warningCheckBoxes.put("unused-variable", new JCheckBox("Unused variables (-Wunused-variable)"));
@@ -99,6 +109,8 @@ public class HlslDxcConfigurable implements Configurable {
                 .addComponent(treatWarningsAsErrorsCheckBox)
                 .addComponent(extraClangWarningsCheckBox)
                 .addComponent(warningsPanel)
+                .addComponent(semanticsHintsCheckBox)
+                .addLabeledComponent("Semantics hint language:", hintLanguageCombo)
                 .addComponentFillVertically(new JPanel(), 0)
                 .getPanel();
     }
@@ -138,7 +150,9 @@ public class HlslDxcConfigurable implements Configurable {
                 || warningCheckBoxes.get("uninitialized").isSelected() != settings.isWarnUninitializedVariable()
                 || warningCheckBoxes.get("conversion").isSelected()
                         != (settings.isWarnConversion() || settings.isWarnImplicitTruncation())
-                || warningCheckBoxes.get("effects-syntax").isSelected() != settings.isWarnEffectsSyntax();
+                || warningCheckBoxes.get("effects-syntax").isSelected() != settings.isWarnEffectsSyntax()
+                || semanticsHintsCheckBox.isSelected() != settings.isSemanticsHintsEnabled()
+                || !HINT_LANGUAGES[hintLanguageCombo.getSelectedIndex()].equals(settings.getHintLanguage());
     }
 
     @Override
@@ -167,6 +181,8 @@ public class HlslDxcConfigurable implements Configurable {
         settings.setWarnImplicitTruncation(false);
         settings.setWarnConversion(warningCheckBoxes.get("conversion").isSelected());
         settings.setWarnEffectsSyntax(warningCheckBoxes.get("effects-syntax").isSelected());
+        settings.setSemanticsHintsEnabled(semanticsHintsCheckBox.isSelected());
+        settings.setHintLanguage(HINT_LANGUAGES[hintLanguageCombo.getSelectedIndex()]);
     }
 
     @Override
@@ -190,5 +206,7 @@ public class HlslDxcConfigurable implements Configurable {
         warningCheckBoxes.get("conversion")
                 .setSelected(settings.isWarnConversion() || settings.isWarnImplicitTruncation());
         warningCheckBoxes.get("effects-syntax").setSelected(settings.isWarnEffectsSyntax());
+        semanticsHintsCheckBox.setSelected(settings.isSemanticsHintsEnabled());
+        hintLanguageCombo.setSelectedIndex(Math.max(0, List.of(HINT_LANGUAGES).indexOf(settings.getHintLanguage())));
     }
 }
