@@ -1,12 +1,26 @@
 <idea-plugin>
-    <id>com.hlsl.plugin</id>
-    <name>HLSL Language Support</name>
+    <!-- The id and the name must both be unique on the Marketplace: the upstream plugin already owns
+         "com.hlsl.plugin" and "HLSL Language Support". -->
+    <id>com.hlsl.dx12.support</id>
+    <name>HLSL Language Support (DX12)</name>
     <vendor>DOCC</vendor>
     <description><![CDATA[
         Syntax highlighting and DXC validation for HLSL (High Level Shading Language) files.
         Supports .hlsl and .hlsli file extensions by default.
         Additional extensions (.fx, .fxh, .vsh, .psh, .gsh, .csh, etc.) can be added via Settings > Editor > File Types > HLSL.
     ]]></description>
+    <change-notes><![CDATA[
+        <ul>
+            <li>Custom colour palette for types, struct names, function calls and variables, adjustable per theme.</li>
+            <li>Completion of struct members through the include chain, resource intrinsics and chained calls.</li>
+            <li>Parameter info and hover documentation built from the declaration and the comment above it.</li>
+            <li>DXC validation with project build macro detection, so guarded shader code is not reported as broken.</li>
+            <li>clang-format integration for Reformat Code.</li>
+        </ul>
+    ]]></change-notes>
+
+    <!-- No <url> element here: the 2024.1 descriptor schema has no such top-level element and the platform
+         rejects the whole plugin when it sees one, which silently disables every extension in it. -->
 
     <depends>com.intellij.modules.platform</depends>
 
