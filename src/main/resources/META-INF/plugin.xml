@@ -13,7 +13,11 @@
         <ul>
             <li>Semantics such as SV_Target, SV_Position, TEXCOORD0, register and the interpolation modifiers
                 are explained on hover, in English or Chinese.</li>
-            <li>Enter indents blocks, and a closing brace written on its own line is aligned with the block.</li>
+            <li>Enter indents blocks, a control statement written without braces indents its body, and a
+                closing brace is aligned with the line that opened the block.</li>
+            <li>Pasting keeps the shape of a block instead of indenting it on top of the indentation it
+                already carried.</li>
+            <li>A DXC diagnostic underlines the symbol it is about instead of the rest of the line.</li>
             <li>Custom colour palette for types, struct names, function calls and variables, adjustable per theme.</li>
             <li>Completion of struct members through the include chain, resource intrinsics and chained calls.</li>
             <li>Parameter info and hover documentation built from the declaration and the comment above it.</li>
