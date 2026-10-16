@@ -13,6 +13,7 @@
         <ul>
             <li>Intrinsic functions such as reversebits and built-in types such as RWTexture2D are explained on
                 hover, and Ctrl+Click opens their declaration in a read-only built-ins file.</li>
+            <li>Ctrl+Click on the path of an #include opens the included file.</li>
             <li>Semantics such as SV_Target, SV_Position, TEXCOORD0, register and the interpolation modifiers
                 are explained on hover, in English or Chinese.</li>
             <li>Enter indents blocks, a control statement written without braces indents its body, and a

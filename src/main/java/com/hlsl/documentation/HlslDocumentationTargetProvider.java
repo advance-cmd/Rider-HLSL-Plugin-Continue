@@ -4,6 +4,7 @@ import com.hlsl.completion.HlslCompletionAnalysis;
 import com.intellij.platform.backend.documentation.DocumentationTarget;
 import com.intellij.platform.backend.documentation.PsiDocumentationTargetProvider;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -17,6 +18,9 @@ public final class HlslDocumentationTargetProvider implements PsiDocumentationTa
     @Override
     public @Nullable DocumentationTarget documentationTarget(@NotNull PsiElement element,
                                                             @Nullable PsiElement originalElement) {
+        // The file an #include resolves to is documented by the platform; reading a symbol at its first offset
+        // would describe whatever word the file happens to start with.
+        if (element instanceof PsiFile) return null;
         PsiElement symbol = originalElement != null ? originalElement : element;
         // A semantic, such as the SV_Target of "float4 main() : SV_Target", is explained rather than resolved
         // as a declaration.

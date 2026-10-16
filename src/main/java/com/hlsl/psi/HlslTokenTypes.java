@@ -14,7 +14,7 @@ public interface HlslTokenTypes {
     IElementType SEMANTIC = new HlslTokenType("SEMANTIC");
 
     // Preprocessor
-    IElementType PREPROCESSOR = new HlslTokenType("PREPROCESSOR");
+    IElementType PREPROCESSOR = new HlslPreprocessorTokenType("PREPROCESSOR");
 
     // Built-in functions
     IElementType BUILTIN_FUNCTION = new HlslTokenType("BUILTIN_FUNCTION");

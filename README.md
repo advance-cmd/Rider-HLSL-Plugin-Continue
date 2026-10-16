@@ -56,6 +56,8 @@ that are compiled by a C++ build system which passes its own preprocessor macros
   any included file
 - `Ctrl+Click` on an intrinsic function or a built-in type opens its declaration in a read-only built-ins file
   that the plugin generates, with the description written above each declaration
+- `Ctrl+Click` on the path of an `#include` opens the included file, found next to the shader or in a
+  directory above it
 
 ### Live templates
 
@@ -174,14 +176,14 @@ Requires JDK 17 or newer. Build the plugin with the Gradle `buildPlugin` task; t
 ## Tests
 
 Run the Gradle `test` task. The suite covers the lexer, the declaration reader behind completion, parameter
-info and hover documentation, the built-in declarations, the include index, DXC
+info and hover documentation, the built-in declarations, the include index and include navigation, DXC
 diagnostic parsing, and IDE-level fixtures that run the real completion contributor and parameter info
 handler.
 
 Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
 sources are not in the repository, so the build skips the test classes that need them unless the sources are
 provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
-a directory that holds them. With the sources in place the whole suite runs — 174 tests.
+a directory that holds them. With the sources in place the whole suite runs — 180 tests.
 
 ## Compatibility
 

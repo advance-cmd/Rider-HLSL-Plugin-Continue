@@ -7,6 +7,7 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.TokenType;
@@ -156,6 +157,17 @@ public final class HlslIncludeIndex {
         return includes;
     }
 
+    /**
+     * The range of the path inside an {@code #include} directive, without its quotes or angle brackets, or
+     * {@code null} when the directive is not an include.
+     */
+    public static @Nullable TextRange includePathRange(CharSequence directive) {
+        Matcher match = INCLUDE_PATTERN.matcher(directive);
+        if (!match.find()) return null;
+        int group = match.group(1) != null ? 1 : 2;
+        return new TextRange(match.start(group), match.end(group));
+    }
+
     private static boolean containsLineBreak(CharSequence source, int start, int end) {
         for (int i = start; i < end; i++) {
             char c = source.charAt(i);
@@ -164,7 +176,11 @@ public final class HlslIncludeIndex {
         return false;
     }
 
-    private static @Nullable VirtualFile resolve(VirtualFile fromFile, String include) {
+    /**
+     * The file an include names: relative to the including file's directory first, then to each directory
+     * above it, which is where shader trees usually keep their shared headers.
+     */
+    public static @Nullable VirtualFile resolve(VirtualFile fromFile, String include) {
         String normalized = include.replace('\\', '/');
         VirtualFile dir = fromFile.getParent();
         if (dir == null) return null;
