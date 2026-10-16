@@ -2,6 +2,7 @@ package com.hlsl.validation;
 
 import com.hlsl.HlslFileType;
 import com.hlsl.completion.HlslIncludeIndex;
+import com.hlsl.documentation.HlslBuiltins;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.ExternalAnnotator;
 import com.intellij.lang.annotation.HighlightSeverity;
@@ -76,7 +77,8 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
         HlslDxcSettings.State settings = HlslDxcSettings.getInstance().snapshot();
         if (!settings.enableValidation || !(file.getFileType() instanceof HlslFileType)) return null;
         VirtualFile virtualFile = file.getVirtualFile();
-        if (virtualFile == null) return null;
+        // The built-ins file only lists declarations for reading; compiling it would report every one of them.
+        if (virtualFile == null || HlslBuiltins.isBuiltinsFile(virtualFile)) return null;
         Document document = FileDocumentManager.getInstance().getDocument(virtualFile);
         if (document == null) return null;
         if (!new HlslDxcSource(document.getText())

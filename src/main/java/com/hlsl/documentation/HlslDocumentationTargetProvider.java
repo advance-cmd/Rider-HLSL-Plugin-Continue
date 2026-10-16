@@ -24,6 +24,11 @@ public final class HlslDocumentationTargetProvider implements PsiDocumentationTa
         if (semantics == null && symbol != element) semantics = HlslSemanticsTarget.of(element);
         if (semantics != null) return semantics;
 
+        // An intrinsic function or a built-in type is declared by the compiler, not by any source file.
+        DocumentationTarget builtin = HlslBuiltinTarget.of(symbol);
+        if (builtin == null && symbol != element) builtin = HlslBuiltinTarget.of(element);
+        if (builtin != null) return builtin;
+
         HlslCompletionAnalysis.Declaration declaration =
                 HlslDocumentationLookup.resolve(symbol, "psiTargetProvider");
         if (declaration == null && symbol != element) {

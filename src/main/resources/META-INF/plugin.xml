@@ -11,6 +11,8 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
+            <li>Intrinsic functions such as reversebits and built-in types such as RWTexture2D are explained on
+                hover, and Ctrl+Click opens their declaration in a read-only built-ins file.</li>
             <li>Semantics such as SV_Target, SV_Position, TEXCOORD0, register and the interpolation modifiers
                 are explained on hover, in English or Chinese.</li>
             <li>Enter indents blocks, a control statement written without braces indents its body, and a
@@ -81,10 +83,15 @@
         <copyPastePostProcessor implementation="com.hlsl.editor.HlslPasteIndentProcessor"/>
 
         <!-- Declared before the provider that shows declarations: the platform stops at the first provider
-             that claims the hovered element, and semantics must not be resolved as declarations. -->
+             that claims the hovered element, and semantics and built-ins must not be resolved as
+             declarations. -->
         <lang.documentationProvider
                 language="HLSL"
                 implementationClass="com.hlsl.documentation.HlslSemanticsDocumentationProvider"/>
+
+        <lang.documentationProvider
+                language="HLSL"
+                implementationClass="com.hlsl.documentation.HlslBuiltinDocumentationProvider"/>
 
         <lang.documentationProvider
                 language="HLSL"

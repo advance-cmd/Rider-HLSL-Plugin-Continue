@@ -44,6 +44,9 @@ that are compiled by a C++ build system which passes its own preprocessor macros
   the interpolation modifiers (`linear`, `centroid`, `nointerpolation`, `noperspective`, `sample`) say what
   the pipeline does with them. The text comes in English and in Chinese, switchable under
   **Settings → Tools → HLSL / DXC**
+- **Built-in functions and types are explained on hover**: intrinsics such as `reversebits` or `lerp` and
+  resource types such as `RWTexture2D` or `StructuredBuffer` show their declaration and what they do, in the
+  same language as the semantics
 - Parameter info opens by itself after a function name is completed and when `(` or `,` is typed, with the
   argument being edited highlighted and `↑`/`↓` to move through overloads
 
@@ -51,6 +54,8 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 
 - Go to declaration (`Ctrl+Click` / `Ctrl+B`) for functions, variables and types, in the current file or in
   any included file
+- `Ctrl+Click` on an intrinsic function or a built-in type opens its declaration in a read-only built-ins file
+  that the plugin generates, with the description written above each declaration
 
 ### Live templates
 
@@ -169,13 +174,14 @@ Requires JDK 17 or newer. Build the plugin with the Gradle `buildPlugin` task; t
 ## Tests
 
 Run the Gradle `test` task. The suite covers the lexer, the declaration reader behind completion, parameter
-info and hover documentation, the include index, DXC diagnostic parsing, and IDE-level fixtures that run the
-real completion contributor and parameter info handler.
+info and hover documentation, the built-in declarations, the include index, DXC
+diagnostic parsing, and IDE-level fixtures that run the real completion contributor and parameter info
+handler.
 
 Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
 sources are not in the repository, so the build skips the test classes that need them unless the sources are
 provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
-a directory that holds them. With the sources in place the whole suite runs — 111 tests.
+a directory that holds them. With the sources in place the whole suite runs — 174 tests.
 
 ## Compatibility
 

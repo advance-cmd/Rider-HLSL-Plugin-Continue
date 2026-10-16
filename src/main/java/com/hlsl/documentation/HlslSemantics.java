@@ -9,11 +9,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.MissingResourceException;
-import java.util.ResourceBundle;
 
 /**
  * The system-value semantics and interpolation modifiers HLSL accepts after a colon, with a description for
@@ -22,7 +19,7 @@ import java.util.ResourceBundle;
  */
 public final class HlslSemantics {
 
-    private static final String BUNDLE = "hlsl.semantics.semantics";
+    private static final HlslHintBundle TEXT = new HlslHintBundle("hlsl.semantics.semantics");
 
     /** Names HLSL defines as shader semantics or as interpolation modifiers. */
     private static final Map<String, Kind> NAMES = new LinkedHashMap<>();
@@ -103,82 +100,21 @@ public final class HlslSemantics {
         if (!HlslDxcSettings.getInstance().isSemanticsHintsEnabled()) return null;
         Kind kind = NAMES.get(name);
         if (kind == null) return null;
-        ResourceBundle bundle = bundle();
-        String description = text(bundle, name);
+        String description = TEXT.text(name);
         if (description == null) return null;
-        String kindName = kindName(kind, bundle);
         return "<html><b>" + StringUtil.escapeXmlEntities(name) + "</b> <i>"
-                + StringUtil.escapeXmlEntities(kindName) + "</i><br>"
+                + StringUtil.escapeXmlEntities(kindName(kind)) + "</i><br>"
                 + StringUtil.escapeXmlEntities(description) + "</html>";
     }
 
     /** The description alone, without markup, for the hover hint and for tests. */
     public static @Nullable String description(@NotNull String name) {
-        return text(bundle(), name);
+        return TEXT.text(name);
     }
 
-    /** The language the descriptions are read in: the configured one, or the IDE's own by default. */
-    static @NotNull Locale locale() {
-        String configured = HlslDxcSettings.getInstance().getHintLanguage();
-        if (configured == null || configured.isBlank() || "auto".equals(configured)) return Locale.getDefault();
-        return Locale.forLanguageTag(configured);
-    }
-
-    /**
-     * The bundle for the configured language, falling back to the default (English) one.
-     *
-     * <p>{@link ResourceBundle#getBundle(String, Locale)} cannot be used on its own: asked for a language the
-     * plugin does not ship, it falls back to {@link Locale#getDefault()} before it falls back to the base
-     * bundle, so on a Chinese machine "English" would have answered in Chinese.</p>
-     */
-    private static @NotNull ResourceBundle bundle() {
-        Locale locale = locale();
-        if (locale.getLanguage().isEmpty() || "en".equals(locale.getLanguage())) return BASE_BUNDLE;
-        return ResourceBundle.getBundle(BUNDLE, locale, NO_DEFAULT_FALLBACK);
-    }
-
-    /**
-     * Resolves only the language asked for: no fallback to the JVM's own locale, and no key inheritance from
-     * the parent, which belongs to the default locale here.
-     */
-    private static final class NoDefaultFallbackControl extends ResourceBundle.Control {
-        @Override
-        public List<Locale> getCandidateLocales(String baseName, Locale locale) {
-            List<Locale> candidates = super.getCandidateLocales(baseName, locale);
-            // The last candidate is the base bundle, which the chain resolves on its own.
-            return candidates.size() > 1 ? candidates.subList(0, candidates.size() - 1) : candidates;
-        }
-
-        @Override
-        public Locale getFallbackLocale(String baseName, Locale locale) {
-            return null;
-        }
-
-        @Override
-        public boolean needsReload(String baseName, Locale locale, String format, ClassLoader loader,
-                                   ResourceBundle bundle, long loadTime) {
-            return false;
-        }
-    }
-
-    private static final ResourceBundle.Control NO_DEFAULT_FALLBACK = new NoDefaultFallbackControl();
-
-    /** The default bundle, which holds the English text. */
-    private static final ResourceBundle BASE_BUNDLE =
-            ResourceBundle.getBundle(BUNDLE, Locale.ROOT, NO_DEFAULT_FALLBACK);
-
-    private static @Nullable String text(@NotNull ResourceBundle bundle, @NotNull String key) {
-        try {
-            if (bundle.containsKey(key)) return bundle.getString(key);
-        } catch (MissingResourceException ignored) {
-            // Fall through to the default bundle below.
-        }
-        return BASE_BUNDLE.containsKey(key) ? BASE_BUNDLE.getString(key) : null;
-    }
-
-    private static @NotNull String kindName(@NotNull Kind kind, @NotNull ResourceBundle bundle) {
+    private static @NotNull String kindName(@NotNull Kind kind) {
         String key = "kind." + kind.name().toLowerCase(Locale.ROOT);
-        String localized = text(bundle, key);
+        String localized = TEXT.text(key);
         return localized != null ? localized : kind.name();
     }
 }

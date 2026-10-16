@@ -33,7 +33,7 @@ public class HlslDxcConfigurable implements Configurable {
     private JCheckBox semanticsHintsCheckBox;
     private JComboBox<String> hintLanguageCombo;
 
-    /** Language tags of the semantics hints, in the order they appear in the combo box. */
+    /** Language tags of the hover explanations, in the order they appear in the combo box. */
     private static final String[] HINT_LANGUAGES = {"auto", "en", "zh"};
     private static final String[] HINT_LANGUAGE_LABELS = {"Automatic (follow the IDE)", "English", "中文"};
 
@@ -69,7 +69,7 @@ public class HlslDxcConfigurable implements Configurable {
         semanticsHintsCheckBox = new JCheckBox("Explain semantics on hover (SV_Target, TEXCOORD, register, ...)");
         semanticsHintsCheckBox.setToolTipText("Hovering a semantic shows what the pipeline does with it, resolved through the include chain like other documentation.");
         hintLanguageCombo = new JComboBox<>(HINT_LANGUAGE_LABELS);
-        hintLanguageCombo.setToolTipText("Language of the semantics explanations.");
+        hintLanguageCombo.setToolTipText("Language of the explanations of semantics, intrinsic functions and built-in types.");
 
         // Warning group checkboxes
         warningCheckBoxes.put("unused-variable", new JCheckBox("Unused variables (-Wunused-variable)"));
@@ -110,7 +110,7 @@ public class HlslDxcConfigurable implements Configurable {
                 .addComponent(extraClangWarningsCheckBox)
                 .addComponent(warningsPanel)
                 .addComponent(semanticsHintsCheckBox)
-                .addLabeledComponent("Semantics hint language:", hintLanguageCombo)
+                .addLabeledComponent("Hint language:", hintLanguageCombo)
                 .addComponentFillVertically(new JPanel(), 0)
                 .getPanel();
     }
