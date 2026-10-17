@@ -152,6 +152,54 @@ public class HlslBuiltinsTest extends BasePlatformTestCase {
         assertEquals(myFixture.getFile().getText().indexOf("Helper"), target.getTextRange().getStartOffset());
     }
 
+    /** The reported case: [numthreads(8,8,1)] had no explanation on hover. */
+    public void testHoveringNumthreadsExplainsIt() {
+        String text = "[numthreads(8,8,1)]\nvoid CS_Irradiance(uint3 id: SV_DispatchThreadID){\n}\n";
+        myFixture.configureByText(HlslFileType.INSTANCE, text);
+        int offset = text.indexOf("numthreads") + 3;
+        HlslBuiltinDocumentationProvider provider = new HlslBuiltinDocumentationProvider();
+        PsiElement claimed = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), null, offset);
+        assertNotNull("the built-ins provider must claim the attribute", claimed);
+        String doc = provider.generateHoverDoc(claimed, claimed);
+        assertNotNull(doc);
+        assertTrue(doc, doc.contains("[numthreads(uint x, uint y, uint z)]"));
+        assertTrue(doc, doc.contains("Number of threads in one thread group"));
+        assertTrue(doc, doc.contains("attribute"));
+
+        DocumentationTarget target = new HlslDocumentationTargetProvider().documentationTarget(claimed, claimed);
+        assertTrue("expected the built-in target, got " + target, target instanceof HlslBuiltinTarget);
+        assertTrue(target.computeDocumentationHint(), target.computeDocumentationHint().startsWith("[numthreads("));
+    }
+
+    public void testAnAttributeWithoutArgumentsIsExplainedInChinese() {
+        HlslDxcSettings.getInstance().setHintLanguage("zh");
+        String text = "void f()\n{\n    [unroll]\n    for (int i = 0; i < 4; i++) {}\n}\n";
+        myFixture.configureByText(HlslFileType.INSTANCE, text);
+        PsiElement element = myFixture.getFile().findElementAt(text.indexOf("unroll") + 1);
+        String doc = new HlslBuiltinDocumentationProvider().generateDoc(element, element);
+        assertNotNull(doc);
+        assertTrue(doc, doc.contains("把循环一直展开"));
+        assertTrue(doc, doc.contains("属性"));
+    }
+
+    /** loop, call and branch are attributes only inside their brackets. */
+    public void testTheSameWordOutsideAnAttributeIsNotExplained() {
+        String text = "float call(float loop)\n{\n    float branch = loop;\n    return branch;\n}\n";
+        myFixture.configureByText(HlslFileType.INSTANCE, text);
+        for (String word : new String[]{"call", "loop", "branch"}) {
+            PsiElement element = myFixture.getFile().findElementAt(text.indexOf(word) + 1);
+            assertNull(word + " is not an attribute here", HlslBuiltins.nameOf(element));
+        }
+    }
+
+    public void testCtrlClickOnAnAttributeGoesToItsDeclaration() {
+        myFixture.configureByText(HlslFileType.INSTANCE,
+                "[numth<caret>reads(8,8,1)]\nvoid CS_Irradiance(uint3 id: SV_DispatchThreadID){\n}\n");
+        PsiElement target = singleTarget();
+        assertEquals("numthreads", target.getText());
+        assertTrue(HlslBuiltins.isBuiltinsFile(target.getContainingFile().getVirtualFile()));
+    }
+
     public void testTheBuiltinsFileIsReadOnlyAndNeverCompiled() {
         assertFalse(HlslBuiltins.file().isWritable());
         PsiFile builtins = PsiManager.getInstance(getProject()).findFile(HlslBuiltins.file());

@@ -2,6 +2,7 @@ package com.hlsl.documentation;
 
 import com.hlsl.HlslFileType;
 import com.hlsl.HlslLanguage;
+import com.hlsl.completion.HlslCompletionAnalysis;
 import com.hlsl.psi.HlslTokenTypes;
 import com.intellij.lang.documentation.DocumentationMarkup;
 import com.intellij.openapi.project.Project;
@@ -30,7 +31,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The intrinsic functions and built-in types of HLSL, such as {@code reversebits} or {@code RWTexture2D}.
+ * The intrinsic functions, built-in types and attributes of HLSL, such as {@code reversebits},
+ * {@code RWTexture2D} or {@code [numthreads(8, 8, 1)]}.
  *
  * <p>The compiler provides these names, so no source file declares them, and hover and Go to Declaration had
  * nothing to show for them. Their declarations are kept in {@code builtins.hlsl}, and the plugin generates a
@@ -40,7 +42,7 @@ import java.util.regex.Pattern;
  */
 public final class HlslBuiltins {
 
-    public enum Kind { FUNCTION, TYPE }
+    public enum Kind { FUNCTION, TYPE, ATTRIBUTE }
 
     /** One built-in: its declaration as written in the file, and the offset of its name in that file. */
     public record Entry(String name, Kind kind, String declaration, int nameOffset) { }
@@ -53,8 +55,9 @@ public final class HlslBuiltins {
     private static final Pattern TYPE_DECLARATION =
             Pattern.compile("(?m)^(?:class|struct)\\s+([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern FUNCTION_NAME = Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
+    private static final Pattern ATTRIBUTE_DECLARATION = Pattern.compile("^\\[([A-Za-z_][A-Za-z0-9_]*)");
 
-    /** A blank-line separated block of the template: one type, or every overload of one function. */
+    /** A blank-line separated block of the template: one type, or every form of one function or attribute. */
     private record Group(String name, Kind kind, String declaration, int nameOffset) { }
 
     private record Stub(LightVirtualFile file, Map<String, Entry> entries) { }
@@ -84,16 +87,25 @@ public final class HlslBuiltins {
 
     /**
      * The built-in name the element is, or {@code null}: only the tokens the lexer reads as an intrinsic
-     * function or a built-in type count, so a field or variable that happens to share a name does not.
+     * function or a built-in type count, and the name of an attribute only inside its brackets, so a field or
+     * variable that happens to share a name does not.
      */
     public static @Nullable String nameOf(@Nullable PsiElement element) {
         if (element == null || element.getNode() == null) return null;
         PsiFile file = element.getContainingFile();
         if (file == null || file.getLanguage() != HlslLanguage.INSTANCE) return null;
         IElementType type = element.getNode().getElementType();
-        if (type != HlslTokenTypes.BUILTIN_FUNCTION && type != HlslTokenTypes.TYPE_KEYWORD) return null;
         String name = element.getText();
-        return entry(name) != null ? name : null;
+        Entry entry = entry(name);
+        if (entry == null) return null;
+        if (entry.kind() == Kind.ATTRIBUTE) {
+            // Inside [numthreads(8, 8, 1)] the name is lexed as a call, inside [unroll] as a plain name.
+            if (type != HlslTokenTypes.FUNCTION_CALL && type != HlslTokenTypes.IDENTIFIER) return null;
+            boolean attribute = HlslCompletionAnalysis.isAttributeName(
+                    file.getViewProvider().getContents(), element.getTextRange().getStartOffset());
+            return attribute ? name : null;
+        }
+        return type == HlslTokenTypes.BUILTIN_FUNCTION || type == HlslTokenTypes.TYPE_KEYWORD ? name : null;
     }
 
     /** The name in the generated built-ins file, which is where Go to Declaration takes a built-in to. */
@@ -142,10 +154,10 @@ public final class HlslBuiltins {
         return description == null ? summary : summary + "\n" + description;
     }
 
-    /** The first overload of a function, or the head of a type up to its name. */
+    /** The first form of a function or an attribute, or the head of a type up to its name. */
     private static String summary(Entry entry) {
         String declaration = entry.declaration();
-        if (entry.kind() == Kind.FUNCTION) {
+        if (entry.kind() != Kind.TYPE) {
             int lineEnd = declaration.indexOf('\n');
             String first = lineEnd < 0 ? declaration : declaration.substring(0, lineEnd);
             return StringUtil.trimEnd(first.strip(), ";");
@@ -202,6 +214,11 @@ public final class HlslBuiltins {
         for (String block : template.split("\n[ \t]*\n")) {
             String declaration = block.strip();
             if (declaration.isEmpty()) continue;
+            Matcher attribute = ATTRIBUTE_DECLARATION.matcher(declaration);
+            if (attribute.find()) {
+                groups.add(new Group(attribute.group(1), Kind.ATTRIBUTE, declaration, attribute.start(1)));
+                continue;
+            }
             Matcher type = TYPE_DECLARATION.matcher(declaration);
             if (type.find()) {
                 groups.add(new Group(type.group(1), Kind.TYPE, declaration, type.start(1)));

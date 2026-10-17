@@ -51,9 +51,10 @@ that are compiled by a C++ build system which passes its own preprocessor macros
   the interpolation modifiers (`linear`, `centroid`, `nointerpolation`, `noperspective`, `sample`) say what
   the pipeline does with them. The text comes in English and in Chinese, switchable under
   **Settings → Tools → HLSL / DXC**
-- **Built-in functions and types are explained on hover**: intrinsics such as `reversebits` or `lerp` and
-  resource types such as `RWTexture2D` or `StructuredBuffer` show their declaration and what they do, in the
-  same language as the semantics
+- **Built-in functions, types and attributes are explained on hover**: intrinsics such as `reversebits` or
+  `lerp`, resource types such as `RWTexture2D` or `StructuredBuffer`, and attributes such as
+  `[numthreads(8, 8, 1)]` or `[unroll]` show their declaration and what they do, in the same language as the
+  semantics
 - Parameter info opens by itself after a function name is completed and when `(` or `,` is typed, with the
   argument being edited highlighted and `↑`/`↓` to move through overloads
 
@@ -61,8 +62,8 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 
 - Go to declaration (`Ctrl+Click` / `Ctrl+B`) for functions, variables and types, in the current file or in
   any included file
-- `Ctrl+Click` on an intrinsic function or a built-in type opens its declaration in a read-only built-ins file
-  that the plugin generates, with the description written above each declaration
+- `Ctrl+Click` on an intrinsic function, a built-in type or an attribute opens its declaration in a read-only
+  built-ins file that the plugin generates, with the description written above each declaration
 - `Ctrl+Click` on the path of an `#include` opens the included file, found next to the shader or in a
   directory above it
 
@@ -190,7 +191,7 @@ handler.
 Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
 sources are not in the repository, so the build skips the test classes that need them unless the sources are
 provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
-a directory that holds them. With the sources in place the whole suite runs — 196 tests.
+a directory that holds them. With the sources in place the whole suite runs — 201 tests.
 
 ## Compatibility
 

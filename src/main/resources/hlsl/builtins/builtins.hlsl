@@ -743,3 +743,57 @@ float4 texCUBEgrad(samplerCUBE s, float3 t, float3 ddx, float3 ddy);
 float4 texCUBElod(samplerCUBE s, float4 t);
 
 float4 texCUBEproj(samplerCUBE s, float4 t);
+
+[numthreads(uint x, uint y, uint z)]
+
+[WaveSize(uint lanes)]
+
+[shader("stage")]
+
+[RootSignature("signature")]
+
+[earlydepthstencil]
+
+[maxvertexcount(uint count)]
+
+[instance(uint count)]
+
+[domain("tri")]
+[domain("quad")]
+[domain("isoline")]
+
+[partitioning("integer")]
+[partitioning("fractional_even")]
+[partitioning("fractional_odd")]
+[partitioning("pow2")]
+
+[outputtopology("point")]
+[outputtopology("line")]
+[outputtopology("triangle_cw")]
+[outputtopology("triangle_ccw")]
+[outputtopology("triangle")]
+
+[outputcontrolpoints(uint count)]
+
+[patchconstantfunc("function")]
+
+[maxtessfactor(float factor)]
+
+[clipplanes(float4 plane, ...)]
+
+[unroll]
+[unroll(uint count)]
+
+[loop]
+
+[fastopt]
+
+[allow_uav_condition]
+
+[branch]
+
+[flatten]
+
+[forcecase]
+
+[call]

@@ -1,5 +1,6 @@
 package com.hlsl.completion;
 
+import com.hlsl.documentation.HlslBuiltins;
 import com.intellij.codeInsight.lookup.Lookup;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.impl.LookupImpl;
@@ -49,6 +50,15 @@ public class HlslAttributeCompletionTest extends BasePlatformTestCase {
         myFixture.configureByText("Blur.hlsl", "void f()\n{\n    [unr<caret>]\n    for (int i = 0; i < 4; i++) {}\n}\n");
         myFixture.completeBasic();
         myFixture.checkResult("void f()\n{\n    [unroll]<caret>\n    for (int i = 0; i < 4; i++) {}\n}\n");
+    }
+
+    /** What completion offers, hover explains and Ctrl+Click finds. */
+    public void testEveryCompletedAttributeIsDeclaredInTheBuiltins() {
+        for (HlslAttributes.Attribute attribute : HlslAttributes.ALL) {
+            HlslBuiltins.Entry entry = HlslBuiltins.entry(attribute.name());
+            assertNotNull("the built-ins file does not declare " + attribute.name(), entry);
+            assertEquals(attribute.name(), HlslBuiltins.Kind.ATTRIBUTE, entry.kind());
+        }
     }
 
     public void testAnIndexDoesNotOfferAttributes() {

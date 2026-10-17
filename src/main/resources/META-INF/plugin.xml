@@ -12,7 +12,7 @@
     <change-notes><![CDATA[
         <ul>
             <li>Attributes such as numthreads, unroll and domain are completed with their parentheses and closing
-                bracket.</li>
+                bracket, explained on hover, and Ctrl+Click opens their declaration.</li>
             <li>Semantics such as SV_DispatchThreadID are completed while the function has no body yet.</li>
             <li>Hover on a compute shader keeps the comment written above its [numthreads] attribute.</li>
             <li>Intrinsic functions such as reversebits and built-in types such as RWTexture2D are explained on

@@ -163,6 +163,21 @@ public final class HlslCompletionAnalysis {
         return new Result(Context.CODE, new ArrayList<>(visible.values()));
     }
 
+    /**
+     * True when the name starting at {@code offset} names an attribute, as the numthreads of
+     * {@code [numthreads(8, 8, 1)]} or the unroll of {@code [unroll]}. The same words are ordinary names
+     * anywhere else, so a variable called loop or a function called call is not one.
+     */
+    public static boolean isAttributeName(CharSequence source, int offset) {
+        Parser parser = new Parser(source, true);
+        for (int i = 0; i < parser.tokens.size(); i++) {
+            int start = parser.tokens.get(i).start;
+            if (start < offset) continue;
+            return start == offset && parser.is(i - 1, "[") && parser.opensAttribute(i - 1);
+        }
+        return false;
+    }
+
     static boolean isSuppressed(CharSequence source, int offset) {
         HlslLexer lexer = new HlslLexer();
         lexer.start(source);
