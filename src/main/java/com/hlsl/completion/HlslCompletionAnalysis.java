@@ -590,7 +590,9 @@ public final class HlslCompletionAnalysis {
                 add(declaredName, type.toString(), Kind.FUNCTION, scopeEnd, scope, null);
                 declare(declaredName, type.toString(), i + 1, paramsEnd);
                 declarationParens.add(i);
-                document(declaredName, Kind.FUNCTION, tokens.get(typeStart).start, tokens.get(paramsEnd).end);
+                // The attributes belong to the declaration: [numthreads(8, 8, 1)] stands between a compute
+                // shader and the comment that documents it.
+                document(declaredName, Kind.FUNCTION, attributesStart(from, typeStart), tokens.get(paramsEnd).end);
                 if (!is(after, "{")) return after + 1;
                 int bodyEnd = close(after, to);
                 int functionEnd = bodyEnd < tokens.size() ? tokens.get(bodyEnd).end : scopeEnd;
@@ -744,6 +746,17 @@ public final class HlslCompletionAnalysis {
             if (!text.equals("]")) return false;
             Integer previous = pairs.get(before);
             return previous != null && previous < before && is(previous, "[") && opensAttribute(previous);
+        }
+
+        /** The offset of the attributes written before the declaration at {@code from}, or of {@code typeStart}. */
+        int attributesStart(int from, int typeStart) {
+            int first = from;
+            while (is(first - 1, "]")) {
+                Integer open = pairs.get(first - 1);
+                if (open == null || open >= first - 1 || !is(open, "[") || !opensAttribute(open)) break;
+                first = open;
+            }
+            return tokens.get(first < from ? first : typeStart).start;
         }
 
         /**

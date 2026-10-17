@@ -44,6 +44,8 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 
 - Hover or `Ctrl+Q` on a function, variable, struct or macro shows its declaration together with the
   comment written above it, resolved through the include chain
+- A function's attributes, such as the `[numthreads(8, 8, 1)]` of a compute shader, are shown with its
+  declaration and do not cut it off from the comment above them
 - Plain hover needs *Show quick documentation on hover* enabled in the IDE
 - **Semantics are explained on hover**: `SV_Target`, `SV_Position`, `TEXCOORD0`, `POSITION`, `register` and
   the interpolation modifiers (`linear`, `centroid`, `nointerpolation`, `noperspective`, `sample`) say what
@@ -188,7 +190,7 @@ handler.
 Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
 sources are not in the repository, so the build skips the test classes that need them unless the sources are
 provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
-a directory that holds them. With the sources in place the whole suite runs — 194 tests.
+a directory that holds them. With the sources in place the whole suite runs — 196 tests.
 
 ## Compatibility
 

@@ -206,6 +206,40 @@ public class HlslCompletionAnalysisTest {
                 analyze("void f(int i) { switch (i) { case FOO: <caret> } }").context());
     }
 
+    /**
+     * The reported case: the attribute of a compute shader stood between the function and its comment, so
+     * hover lost the comment.
+     */
+    @Test
+    public void attributeKeepsTheCommentAboveAComputeShader() {
+        String source = """
+                float3 TangentToWorld(float3 d, float3 n) { return d; }
+
+                // ======================== ① 辐照度图 ========================
+                // E(n) = ∫半球 L(ω) cosθ dω，dω = sinθ dθ dφ。存 E / π：用的时候乘上漫反射颜色就是漫反射
+                [numthreads(8,8,1)]
+                void CS_Irradiance(uint3 id: SV_DispatchThreadID){
+                }
+                """;
+        HlslCompletionAnalysis.Declaration declaration =
+                HlslCompletionAnalysis.declarationOf("CS_Irradiance", source, source.length(), List.of());
+        assertNotNull(declaration);
+        assertEquals("// ======================== ① 辐照度图 ========================\n"
+                + "// E(n) = ∫半球 L(ω) cosθ dω，dω = sinθ dθ dφ。存 E / π：用的时候乘上漫反射颜色就是漫反射",
+                declaration.comment());
+        assertEquals("[numthreads(8,8,1)]\nvoid CS_Irradiance(uint3 id: SV_DispatchThreadID)", declaration.text());
+    }
+
+    @Test
+    public void attributesOnTheSameLineBelongToTheDeclaration() {
+        String source = "// Blurs one row.\n[shader(\"compute\")] [numthreads(256, 1, 1)] void CS_Blur(uint3 id : SV_DispatchThreadID) {}\n";
+        HlslCompletionAnalysis.Declaration declaration =
+                HlslCompletionAnalysis.declarationOf("CS_Blur", source, source.length(), List.of());
+        assertNotNull(declaration);
+        assertEquals("// Blurs one row.", declaration.comment());
+        assertTrue(declaration.text(), declaration.text().startsWith("[shader(\"compute\")] [numthreads(256, 1, 1)] void CS_Blur("));
+    }
+
     private static HlslCompletionAnalysis.Result analyze(String markedSource, String... includes) {
         int offset = markedSource.indexOf("<caret>");
         assertTrue(offset >= 0);
