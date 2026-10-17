@@ -71,6 +71,14 @@ public class HlslCompletionContributor extends CompletionContributor {
                 for (String semantic : HlslLexer.getSemantics()) {
                     lookup.addElement(LookupElementBuilder.create(semantic).withIcon(AllIcons.Nodes.Annotationtype));
                 }
+                // A resource or a constant buffer member is bound after the same colon.
+                for (String binding : BINDINGS) {
+                    lookup.addElement(LookupElementBuilder.create(binding)
+                            .withBoldness(true)
+                            .withIcon(AllIcons.Nodes.Favorite)
+                            .withTailText("()", true)
+                            .withInsertHandler(ARGUMENTS_INSERT));
+                }
                 stop(result, lookup);
                 return;
             }
@@ -187,6 +195,23 @@ public class HlslCompletionContributor extends CompletionContributor {
         target.stopHere();
         if (target != original) original.stopHere();
     }
+
+    /** What may follow the colon of a declaration besides a semantic. */
+    private static final List<String> BINDINGS = List.of("register", "packoffset");
+
+    /** Inserts the parentheses of a binding with the caret between them, as for a call. */
+    private static final InsertHandler<LookupElement> ARGUMENTS_INSERT = (InsertionContext ctx, LookupElement item) -> {
+        if (ctx.getCompletionChar() == '(') ctx.setAddCompletionChar(false);
+        Document document = ctx.getDocument();
+        int offset = ctx.getTailOffset();
+        int next = skipSpaces(document.getCharsSequence(), offset);
+        if (next < document.getTextLength() && document.getCharsSequence().charAt(next) == '(') {
+            ctx.getEditor().getCaretModel().moveToOffset(next + 1);
+            return;
+        }
+        document.insertString(offset, "()");
+        ctx.getEditor().getCaretModel().moveToOffset(offset + 1);
+    };
 
     /**
      * Completes an attribute: its parentheses with the caret inside them, and inside the quotes when the

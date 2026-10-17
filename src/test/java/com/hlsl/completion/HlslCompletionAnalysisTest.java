@@ -185,6 +185,27 @@ public class HlslCompletionAnalysisTest {
                 analyze("float gGrid[4][4];\nfloat f(int i) { return gGrid[1][<caret>]; }").context());
     }
 
+    /** The reported case: the semantic of a parameter, typed before the body of the function exists. */
+    @Test
+    public void parameterSemanticIsRecognisedBeforeTheBodyIsWritten() {
+        assertEquals(HlslCompletionAnalysis.Context.SEMANTIC,
+                analyze("[numthreads(8, 8, 1)]\nvoid CS_Irradiance(uint3 id : SV_Disp<caret>)").context());
+        assertEquals(HlslCompletionAnalysis.Context.SEMANTIC,
+                analyze("float4 PS(float4 pos : SV_Position) : SV_<caret>").context());
+        assertEquals(HlslCompletionAnalysis.Context.SEMANTIC,
+                analyze("struct VSOut { float2 uv[2] : TEX<caret>").context());
+    }
+
+    @Test
+    public void ternaryAndCaseColonsAreNotSemantics() {
+        assertEquals(HlslCompletionAnalysis.Context.CODE,
+                analyze("float f(bool b, float x, float y) { return b ? x : <caret>; }").context());
+        assertEquals(HlslCompletionAnalysis.Context.CODE,
+                analyze("float3 f(bool b, float3 c) { return b ? float3(1, 0, 0) : <caret>; }").context());
+        assertEquals(HlslCompletionAnalysis.Context.CODE,
+                analyze("void f(int i) { switch (i) { case FOO: <caret> } }").context());
+    }
+
     private static HlslCompletionAnalysis.Result analyze(String markedSource, String... includes) {
         int offset = markedSource.indexOf("<caret>");
         assertTrue(offset >= 0);

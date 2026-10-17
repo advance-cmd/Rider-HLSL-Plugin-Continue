@@ -31,6 +31,8 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 - Case-insensitive matching, which matters because HLSL names are CamelCase
 - Locals, globals, functions, structs, macros and `const` globals from the file and its include chain, and
   semantics after a colon
+- Semantics are offered after a colon even while the function they belong to has no body yet, and
+  `register` and `packoffset` are inserted with their parentheses
 - Attributes in square brackets, such as `[numthreads(8, 8, 1)]`, `[unroll]` or `[domain("tri")]`: accepting
   one with Enter, Tab or a click inserts its parentheses with the caret inside them, and the closing bracket
   when it is missing
@@ -186,7 +188,7 @@ handler.
 Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
 sources are not in the repository, so the build skips the test classes that need them unless the sources are
 provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
-a directory that holds them. With the sources in place the whole suite runs — 190 tests.
+a directory that holds them. With the sources in place the whole suite runs — 194 tests.
 
 ## Compatibility
 

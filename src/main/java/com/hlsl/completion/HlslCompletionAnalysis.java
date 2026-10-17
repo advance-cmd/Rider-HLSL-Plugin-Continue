@@ -151,7 +151,7 @@ public final class HlslCompletionAnalysis {
             return new Result(Context.MEMBER, new ArrayList<>(members(type, structures).values()));
         }
         if (parser.is(previous, ":")) {
-            if (parser.semanticColons.contains(parser.tokens.get(previous).start)) {
+            if (parser.isSemanticColon(previous)) {
                 return new Result(Context.SEMANTIC, List.of());
             }
             if (parser.is(previous - 1, ":")) return new Result(Context.SUPPRESSED, List.of());
@@ -744,6 +744,39 @@ public final class HlslCompletionAnalysis {
             if (!text.equals("]")) return false;
             Integer previous = pairs.get(before);
             return previous != null && previous < before && is(previous, "[") && opensAttribute(previous);
+        }
+
+        /**
+         * True when the colon at {@code colon} introduces a semantic. The declaration parser marks the colons of
+         * the declarations it recognised, but a function whose body is not written yet, as in
+         * {@code void main(uint3 id : SV_|)}, is not one of them, so the colon is also read from what stands
+         * before it: a name after its type ({@code uint3 id :}), or a parameter list after a return type and a
+         * function name ({@code float4 main(...) :}). The operand of a ternary or a case label has no type
+         * before it.
+         */
+        boolean isSemanticColon(int colon) {
+            if (semanticColons.contains(tokens.get(colon).start)) return true;
+            int before = colon - 1;
+            // An array declarator: float2 uv[2] : TEXCOORD0.
+            while (is(before, "]")) {
+                Integer open = pairs.get(before);
+                if (open == null || open >= before) return false;
+                before = open - 1;
+            }
+            if (is(before, ")")) {
+                Integer open = pairs.get(before);
+                if (open == null || open >= before) return false;
+                before = open - 1;
+            }
+            return name(before) && endsType(before - 1);
+        }
+
+        /** True when the token ends a type: a type keyword, a type name, or the > of a template argument list. */
+        boolean endsType(int i) {
+            if (i < 0 || i >= tokens.size()) return false;
+            Token token = tokens.get(i);
+            return token.type == HlslTokenTypes.TYPE_KEYWORD || token.type == HlslTokenTypes.IDENTIFIER
+                    || token.type == HlslTokenTypes.STRUCT_NAME || token.text.equals(">");
         }
 
         int before(int offset) {

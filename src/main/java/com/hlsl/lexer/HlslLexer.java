@@ -159,6 +159,7 @@ public class HlslLexer extends LexerBase {
             "SV_DispatchThreadID", "SV_GroupID", "SV_GroupIndex", "SV_GroupThreadID",
             "SV_DomainLocation", "SV_InsideTessFactor", "SV_OutputControlPointID",
             "SV_TessFactor", "SV_GSInstanceID", "SV_StencilRef",
+            "SV_ViewID", "SV_Barycentrics", "SV_InnerCoverage",
             "POSITION", "POSITION0", "POSITION1",
             "COLOR", "COLOR0", "COLOR1",
             "TEXCOORD", "TEXCOORD0", "TEXCOORD1", "TEXCOORD2", "TEXCOORD3",

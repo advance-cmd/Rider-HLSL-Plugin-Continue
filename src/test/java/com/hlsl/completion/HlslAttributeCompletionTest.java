@@ -57,4 +57,17 @@ public class HlslAttributeCompletionTest extends BasePlatformTestCase {
         List<String> lookup = myFixture.getLookupElementStrings();
         assertTrue("an index must not offer attributes: " + lookup, lookup == null || !lookup.contains("numthreads"));
     }
+
+    /** The reported case: a parameter semantic typed before the function has a body. */
+    public void testAParameterSemanticIsCompleted() {
+        myFixture.configureByText("IBL.hlsl", "[numthreads(8, 8, 1)]\nvoid CS_Irradiance(uint3 id : SV_Disp<caret>)\n");
+        myFixture.completeBasic();
+        myFixture.checkResult("[numthreads(8, 8, 1)]\nvoid CS_Irradiance(uint3 id : SV_DispatchThreadID<caret>)\n");
+    }
+
+    public void testRegisterIsCompletedWithItsParentheses() {
+        myFixture.configureByText("IBL.hlsl", "TextureCube gSky : regi<caret>;\n");
+        myFixture.completeBasic();
+        myFixture.checkResult("TextureCube gSky : register(<caret>);\n");
+    }
 }
