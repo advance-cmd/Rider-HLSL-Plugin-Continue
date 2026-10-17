@@ -11,25 +11,14 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
-            <li>Attributes such as numthreads, unroll and domain are completed with their parentheses and closing
-                bracket, explained on hover, and Ctrl+Click opens their declaration.</li>
-            <li>Semantics such as SV_DispatchThreadID are completed while the function has no body yet.</li>
-            <li>Hover on a compute shader keeps the comment written above its [numthreads] attribute.</li>
-            <li>Intrinsic functions such as reversebits and built-in types such as RWTexture2D are explained on
-                hover, and Ctrl+Click opens their declaration in a read-only built-ins file.</li>
-            <li>Ctrl+Click on the path of an #include opens the included file.</li>
-            <li>Semantics such as SV_Target, SV_Position, TEXCOORD0, register and the interpolation modifiers
-                are explained on hover, in English or Chinese.</li>
-            <li>Enter indents blocks, a control statement written without braces indents its body, and a
-                closing brace is aligned with the line that opened the block.</li>
-            <li>Pasting keeps the shape of a block instead of indenting it on top of the indentation it
-                already carried.</li>
-            <li>A DXC diagnostic underlines the symbol it is about instead of the rest of the line.</li>
-            <li>Custom colour palette for types, struct names, function calls and variables, adjustable per theme.</li>
-            <li>Completion of struct members through the include chain, resource intrinsics and chained calls.</li>
-            <li>Parameter info and hover documentation built from the declaration and the comment above it.</li>
-            <li>DXC validation with project build macro detection, so guarded shader code is not reported as broken.</li>
-            <li>clang-format integration for Reformat Code.</li>
+            <li>Attributes such as numthreads, unroll and domain are offered inside square brackets, and
+                accepting one inserts its parentheses and the closing bracket.</li>
+            <li>Attributes are explained on hover, in English or Chinese, and Ctrl+Click opens their declaration
+                in the built-ins file.</li>
+            <li>Semantics such as SV_DispatchThreadID are completed after the colon of a parameter before the
+                function has a body, and register and packoffset are completed with their parentheses.</li>
+            <li>Hover on a function that carries attributes, such as a compute shader with [numthreads], shows the
+                attributes and keeps the comment written above them.</li>
         </ul>
     ]]></change-notes>
 
