@@ -153,6 +153,38 @@ public class HlslCompletionAnalysisTest {
         assertFalse(names.contains("Strength"));
     }
 
+    @Test
+    public void bracketBeforeAFunctionOpensAnAttribute() {
+        assertEquals(HlslCompletionAnalysis.Context.ATTRIBUTE,
+                analyze("[numth<caret>]\nvoid main(uint3 id : SV_DispatchThreadID) {}").context());
+        assertEquals(HlslCompletionAnalysis.Context.ATTRIBUTE,
+                analyze("float4 PS() : SV_Target { return 0; }\n[numth<caret>\nvoid CS() {}").context());
+    }
+
+    @Test
+    public void bracketAfterAnotherAttributeOpensAnAttribute() {
+        assertEquals(HlslCompletionAnalysis.Context.ATTRIBUTE,
+                analyze("[shader(\"compute\")] [nu<caret>]\nvoid main() {}").context());
+    }
+
+    @Test
+    public void bracketBeforeALoopOpensAnAttribute() {
+        assertEquals(HlslCompletionAnalysis.Context.ATTRIBUTE, analyze("""
+                void f() {
+                    [unr<caret>]
+                    for (int i = 0; i < 4; i++) {}
+                }
+                """).context());
+    }
+
+    @Test
+    public void anIndexIsNotAnAttribute() {
+        assertEquals(HlslCompletionAnalysis.Context.CODE,
+                analyze("float gValues[4];\nfloat f(int i) { return gValues[<caret>]; }").context());
+        assertEquals(HlslCompletionAnalysis.Context.CODE,
+                analyze("float gGrid[4][4];\nfloat f(int i) { return gGrid[1][<caret>]; }").context());
+    }
+
     private static HlslCompletionAnalysis.Result analyze(String markedSource, String... includes) {
         int offset = markedSource.indexOf("<caret>");
         assertTrue(offset >= 0);

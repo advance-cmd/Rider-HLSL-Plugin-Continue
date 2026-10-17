@@ -11,6 +11,8 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
+            <li>Attributes such as numthreads, unroll and domain are completed with their parentheses and closing
+                bracket.</li>
             <li>Intrinsic functions such as reversebits and built-in types such as RWTexture2D are explained on
                 hover, and Ctrl+Click opens their declaration in a read-only built-ins file.</li>
             <li>Ctrl+Click on the path of an #include opens the included file.</li>

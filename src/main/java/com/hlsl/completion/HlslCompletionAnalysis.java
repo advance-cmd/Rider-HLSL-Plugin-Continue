@@ -29,7 +29,7 @@ import java.util.regex.Pattern;
  * transitive include chain — so both read declarations through this class.</p>
  */
 public final class HlslCompletionAnalysis {
-    enum Context { CODE, SEMANTIC, MEMBER, SUPPRESSED }
+    enum Context { CODE, SEMANTIC, MEMBER, ATTRIBUTE, SUPPRESSED }
     public enum Kind { TYPE, FUNCTION, VARIABLE, MACRO, FIELD }
     record Candidate(String name, String type, Kind kind) { }
     record Result(Context context, List<Candidate> candidates) { }
@@ -143,6 +143,9 @@ public final class HlslCompletionAnalysis {
         int prefixStart = Math.min(offset, source.length());
         while (prefixStart > 0 && isIdentifierPart(source.charAt(prefixStart - 1))) prefixStart--;
         int previous = parser.before(prefixStart);
+        if (parser.is(previous, "[") && parser.opensAttribute(previous)) {
+            return new Result(Context.ATTRIBUTE, List.of());
+        }
         if (parser.is(previous, ".")) {
             String type = parser.expressionType(previous - 1, visible, structures);
             return new Result(Context.MEMBER, new ArrayList<>(members(type, structures).values()));
@@ -726,6 +729,21 @@ public final class HlslCompletionAnalysis {
                     || type == HlslTokenTypes.FUNCTION_CALL || type == HlslTokenTypes.FIELD_ACCESS
                     || type == HlslTokenTypes.SEMANTIC || type == HlslTokenTypes.BUILTIN_FUNCTION
                     || type == HlslTokenTypes.INSTANCE_METHOD_CALL || type == HlslTokenTypes.TYPE_KEYWORD;
+        }
+
+        /**
+         * True when the bracket at {@code open} starts an attribute such as {@code [numthreads(8, 8, 1)]} or
+         * {@code [unroll]} rather than an index. An attribute stands where a declaration or a statement begins,
+         * so what comes before it ends a statement, or is another attribute.
+         */
+        boolean opensAttribute(int open) {
+            int before = open - 1;
+            if (before < 0) return true;
+            String text = tokens.get(before).text;
+            if (text.equals(";") || text.equals("{") || text.equals("}")) return true;
+            if (!text.equals("]")) return false;
+            Integer previous = pairs.get(before);
+            return previous != null && previous < before && is(previous, "[") && opensAttribute(previous);
         }
 
         int before(int offset) {

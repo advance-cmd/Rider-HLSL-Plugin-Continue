@@ -18,6 +18,7 @@ import com.intellij.codeInsight.template.impl.TemplateSettings;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.patterns.PlatformPatterns;
@@ -69,6 +70,17 @@ public class HlslCompletionContributor extends CompletionContributor {
             if (analysis.context() == HlslCompletionAnalysis.Context.SEMANTIC) {
                 for (String semantic : HlslLexer.getSemantics()) {
                     lookup.addElement(LookupElementBuilder.create(semantic).withIcon(AllIcons.Nodes.Annotationtype));
+                }
+                stop(result, lookup);
+                return;
+            }
+            if (analysis.context() == HlslCompletionAnalysis.Context.ATTRIBUTE) {
+                for (HlslAttributes.Attribute attribute : HlslAttributes.ALL) {
+                    lookup.addElement(LookupElementBuilder.create(attribute, attribute.name())
+                            .withIcon(AllIcons.Nodes.Annotationtype)
+                            .withTailText(attribute.parameters(), true)
+                            .withTypeText(attribute.appliesTo(), true)
+                            .withInsertHandler(ATTRIBUTE_INSERT));
                 }
                 stop(result, lookup);
                 return;
@@ -174,6 +186,42 @@ public class HlslCompletionContributor extends CompletionContributor {
     private static void stop(CompletionResultSet original, CompletionResultSet target) {
         target.stopHere();
         if (target != original) original.stopHere();
+    }
+
+    /**
+     * Completes an attribute: its parentheses with the caret inside them, and inside the quotes when the
+     * argument is a string, followed by the closing bracket when it is not written yet. An attribute without
+     * arguments leaves the caret after its bracket.
+     */
+    private static final InsertHandler<LookupElement> ATTRIBUTE_INSERT = (InsertionContext ctx, LookupElement item) -> {
+        if (!(item.getObject() instanceof HlslAttributes.Attribute attribute)) return;
+        char completionChar = ctx.getCompletionChar();
+        if (completionChar == '(' || completionChar == ']') ctx.setAddCompletionChar(false);
+        Document document = ctx.getDocument();
+        CharSequence text = document.getCharsSequence();
+        int offset = ctx.getTailOffset();
+        int next = skipSpaces(text, offset);
+        boolean closed = next < text.length() && text.charAt(next) == ']';
+        if (attribute.arguments() == HlslAttributes.Arguments.NONE) {
+            if (!closed) document.insertString(offset, "]");
+            ctx.getEditor().getCaretModel().moveToOffset((closed ? next : offset) + 1);
+            return;
+        }
+        if (next < text.length() && text.charAt(next) == '(') {
+            ctx.getEditor().getCaretModel().moveToOffset(next + 1);
+            return;
+        }
+        boolean string = attribute.arguments() == HlslAttributes.Arguments.STRING;
+        String open = string ? "(\"" : "(";
+        String close = string ? "\")" : ")";
+        document.insertString(offset, open + close + (closed ? "" : "]"));
+        ctx.getEditor().getCaretModel().moveToOffset(offset + open.length());
+    };
+
+    private static int skipSpaces(CharSequence text, int from) {
+        int next = from;
+        while (next < text.length() && (text.charAt(next) == ' ' || text.charAt(next) == '\t')) next++;
+        return next;
     }
 
     private static final InsertHandler<LookupElement> PAREN_INSERT = (InsertionContext ctx, LookupElement item) -> {
