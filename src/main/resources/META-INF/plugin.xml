@@ -11,14 +11,12 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
-            <li>Attributes such as numthreads, unroll and domain are offered inside square brackets, and
-                accepting one inserts its parentheses and the closing bracket.</li>
-            <li>Attributes are explained on hover, in English or Chinese, and Ctrl+Click opens their declaration
-                in the built-ins file.</li>
-            <li>Semantics such as SV_DispatchThreadID are completed after the colon of a parameter before the
-                function has a body, and register and packoffset are completed with their parentheses.</li>
-            <li>Hover on a function that carries attributes, such as a compute shader with [numthreads], shows the
-                attributes and keeps the comment written above them.</li>
+            <li>A helper that other shaders include, such as a Shadow.hlsl included by LightingUtil.hlsl, is
+                validated through the shader that includes it, so the declarations it relies on are no longer
+                reported as undefined. Only the helper's own diagnostics are shown, and unsaved edits of every
+                file on the include chain are compiled.</li>
+            <li>When several shaders include a helper, // #pragma hlsl root Triangle.hlsl picks the one it is
+                compiled through.</li>
         </ul>
     ]]></change-notes>
 
