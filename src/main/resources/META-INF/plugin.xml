@@ -11,12 +11,12 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
-            <li>A helper that other shaders include, such as a Shadow.hlsl included by LightingUtil.hlsl, is
-                validated through the shader that includes it, so the declarations it relies on are no longer
-                reported as undefined. Only the helper's own diagnostics are shown, and unsaved edits of every
-                file on the include chain are compiled.</li>
-            <li>When several shaders include a helper, // #pragma hlsl root Triangle.hlsl picks the one it is
-                compiled through.</li>
+            <li>In a helper that another shader includes, such as a Shadow.hlsl included by LightingUtil.hlsl,
+                completion, parameter info, hover and Ctrl+Click know what the shaders including it declare before
+                their #include of it: pass. lists the members of PassConstants, and Ctrl+Click on PassConstants
+                opens its declaration in LightingUtil.hlsl.</li>
+            <li>A struct such a helper gets from the shader including it, such as PassConstants in Shadow.hlsl,
+                is coloured as a struct name.</li>
         </ul>
     ]]></change-notes>
 
