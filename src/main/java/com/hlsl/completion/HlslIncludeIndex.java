@@ -74,6 +74,18 @@ public final class HlslIncludeIndex {
         return result;
     }
 
+    /** The files {@code file} includes itself, resolved the way completion resolves them. */
+    public @NotNull List<VirtualFile> directIncludes(@NotNull VirtualFile file) {
+        Entry entry = getOrParse(file);
+        if (entry == null) return List.of();
+        List<VirtualFile> result = new ArrayList<>();
+        for (String include : entry.includes) {
+            VirtualFile resolved = resolve(file, include);
+            if (resolved != null && !result.contains(resolved)) result.add(resolved);
+        }
+        return result;
+    }
+
     private void forEachIncludedEntry(VirtualFile file, Consumer<Entry> consumer) {
         Entry root = getOrParse(file);
         if (root == null) return;

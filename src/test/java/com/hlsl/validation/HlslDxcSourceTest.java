@@ -41,6 +41,16 @@ public class HlslDxcSourceTest {
     }
 
     @Test
+    public void aRootPragmaNamesTheShaderAndIsHiddenFromTheCompiler() {
+        String text = "// #pragma hlsl root Triangle.hlsl\nfloat ViewZ(PassConstants pass, float3 posW) { return 0; }";
+        HlslDxcSource source = new HlslDxcSource(text);
+        assertEquals("Triangle.hlsl", source.option("root", null));
+        assertFalse(source.compilerText().contains("#pragma hlsl"));
+        assertTrue("naming a root asks for the include file to be validated",
+                new HlslDxcSource("// #pragma hlsl root Triangle.hlsl").shouldValidate("Shadow.hlsli", false));
+    }
+
+    @Test
     public void includeFilesRequireOptInOrAnExplicitCompilePragma() {
         HlslDxcSource source = new HlslDxcSource("float3 helper(float3 x) { return x; }");
         assertFalse(source.shouldValidate("Lighting.HLSLI", false));

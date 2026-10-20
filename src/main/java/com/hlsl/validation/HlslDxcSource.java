@@ -7,10 +7,13 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** File-local compiler options. Comment pragmas are intentional plugin configuration. */
+/**
+ * File-local compiler options. Comment pragmas are intentional plugin configuration: {@code profile},
+ * {@code entry} and {@code hv} set the compile, and {@code root} names the shader a helper is compiled through.
+ */
 final class HlslDxcSource {
     private static final Pattern PRAGMA = Pattern.compile(
-            "^[\\t ]*(?://[\\t ]*)?#[\\t ]*pragma[\\t ]+hlsl[\\t ]+(profile|entry|hv)[\\t ]+([^\\s/]+)[^\\r\\n]*",
+            "^[\\t ]*(?://[\\t ]*)?#[\\t ]*pragma[\\t ]+hlsl[\\t ]+(profile|entry|hv|root)[\\t ]+([^\\s/]+)[^\\r\\n]*",
             Pattern.MULTILINE);
     private static final Set<String> INCLUDE_EXTENSIONS = Set.of("hlsli", "fxh", "ush", "h", "inc");
 
@@ -45,7 +48,7 @@ final class HlslDxcSource {
         int dot = filePath.lastIndexOf('.');
         String extension = dot < 0 ? "" : filePath.substring(dot + 1).toLowerCase(Locale.ROOT);
         return !INCLUDE_EXTENSIONS.contains(extension) || validateIncludes
-                || hasOption("profile") || hasOption("entry");
+                || hasOption("profile") || hasOption("entry") || hasOption("root");
     }
 
     String compilerText() {

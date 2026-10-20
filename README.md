@@ -111,6 +111,22 @@ Keywords, numbers, strings and comments follow your theme. Every entry can be ch
 
 Profile, entry point and HLSL version can be overridden per file, in a pragma comment.
 
+### Helpers included by other shaders
+
+A helper is often written to be included after the declarations it uses, such as a `Shadow.hlsl` that
+`LightingUtil.hlsl` includes once it has declared `PassConstants`. Compiled on its own it would report those
+declarations as undefined, so it is compiled the way the build compiles it:
+
+- The plugin finds the shaders that include the file, directly or through other includes, in the file's
+  directory and below the directory above it, and compiles the one at the top of the chain
+- Every file of the chain is compiled with its unsaved edits
+- Only the diagnostics inside the edited file are shown, each saying which shader it was compiled through;
+  the shader's own mistakes are reported when that shader is opened
+- Profile, entry point and HLSL version come from that shader
+- When several shaders include the file, the one fewest includes away is taken, and between those the
+  first by path. `// #pragma hlsl root Triangle.hlsl` picks one by name
+- A file with its own `profile` or `entry` pragma is compiled on its own
+
 ### Build macros
 
 A build system passes macros that a standalone compiler run does not see. Without them the plugin reports
@@ -131,7 +147,8 @@ Validation stays quiet so that real problems stand out.
 - Warnings use the compiler's default set. The extra groups (unused variables and parameters, unreachable
   code, uninitialized values, conversions, effects syntax) and the full clang warning set are opt-in
 - Diagnostics from include files are dropped unless *Compile include files independently* is enabled,
-  because their coordinates do not refer to a line of the file being edited
+  because their coordinates do not refer to a line of the file being edited. A helper compiled through the
+  shader that includes it shows only its own diagnostics
 - Positionless compiler chatter is not reported
 - At most five file-level annotations are shown, followed by a summary line
 
@@ -159,7 +176,7 @@ The configuration file is found by walking up from the file's directory, and ran
 | Preprocessor defines | empty | `NAME=VALUE`, separated by `;`, `,` or spaces; wins over detection |
 | Detect build macros from the project | on | reads the shader macro tables |
 | Enable DXC validation | on | |
-| Compile include files independently | off | also validates `.hlsli`, `.fxh`, `.ush`, `.h`, `.inc` |
+| Compile include files independently | off | also validates `.hlsli`, `.fxh`, `.ush`, `.h`, `.inc`, through the shader that includes them |
 | Treat warnings as errors | off | |
 | Enable clang's full warning set | off | noisy; expect warnings on correct HLSL |
 | Extra warning groups | all off | unused variables and parameters, unreachable code, uninitialized values, conversions, effects syntax |
@@ -191,7 +208,7 @@ handler.
 Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
 sources are not in the repository, so the build skips the test classes that need them unless the sources are
 provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
-a directory that holds them. With the sources in place the whole suite runs — 201 tests.
+a directory that holds them. With the sources in place the whole suite runs — 212 tests.
 
 ## Compatibility
 
