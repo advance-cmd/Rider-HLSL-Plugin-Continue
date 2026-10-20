@@ -31,10 +31,10 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 - Case-insensitive matching, which matters because HLSL names are CamelCase
 - Locals, globals, functions, structs, macros and `const` globals from the file and its include chain, and
   semantics after a colon
-- In a helper that another shader includes, such as a `Shadow.hlsl` that `LightingUtil.hlsl` includes after
-  declaring `PassConstants`, what the shaders including it declare before their `#include` of it, together
-  with what they include up to there. The chain is the one the helper is validated through, so
-  `// #pragma hlsl root Triangle.hlsl` picks it here as well, and the helper's own declarations still win
+- In a helper that another shader includes, what the shaders including it declare before their `#include`
+  of it, together with what they include up to there, such as a constant buffer struct declared by the
+  header that includes the helper. The chain is the one the helper is validated through, so
+  `// #pragma hlsl root Main.hlsl` picks it here as well, and the helper's own declarations still win
 - Semantics are offered after a colon even while the function they belong to has no body yet, and
   `register` and `packoffset` are inserted with their parentheses
 - Attributes in square brackets, such as `[numthreads(8, 8, 1)]`, `[unroll]` or `[domain("tri")]`: accepting
@@ -68,7 +68,7 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 
 - Go to declaration (`Ctrl+Click` / `Ctrl+B`) for functions, variables and types, in the current file or in
   any included file. In a helper it also reaches what the shaders including it declare before their
-  `#include` of it, so `PassConstants` in `Shadow.hlsl` opens its declaration in `LightingUtil.hlsl`
+  `#include` of it, such as a struct declared by the header that includes the helper
 - `Ctrl+Click` on an intrinsic function, a built-in type or an attribute opens its declaration in a read-only
   built-ins file that the plugin generates, with the description written above each declaration
 - `Ctrl+Click` on the path of an `#include` opens the included file, found next to the shader or in a
@@ -120,9 +120,9 @@ Profile, entry point and HLSL version can be overridden per file, in a pragma co
 
 ### Helpers included by other shaders
 
-A helper is often written to be included after the declarations it uses, such as a `Shadow.hlsl` that
-`LightingUtil.hlsl` includes once it has declared `PassConstants`. Compiled on its own it would report those
-declarations as undefined, so it is compiled the way the build compiles it:
+A helper is often written to be included after the declarations it uses: a shared header declares a constant
+buffer struct and then includes the helper that takes it as a parameter. Compiled on its own the helper would
+report those declarations as undefined, so it is compiled the way the build compiles it:
 
 - The plugin finds the shaders that include the file, directly or through other includes, in the file's
   directory and below the directory above it, and compiles the one at the top of the chain
@@ -131,7 +131,7 @@ declarations as undefined, so it is compiled the way the build compiles it:
   the shader's own mistakes are reported when that shader is opened
 - Profile, entry point and HLSL version come from that shader
 - When several shaders include the file, the one fewest includes away is taken, and between those the
-  first by path. `// #pragma hlsl root Triangle.hlsl` picks one by name
+  first by path. `// #pragma hlsl root Main.hlsl` picks one by name
 - A file with its own `profile` or `entry` pragma is compiled on its own
 
 ### Build macros

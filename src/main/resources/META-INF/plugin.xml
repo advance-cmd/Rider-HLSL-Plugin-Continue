@@ -11,12 +11,11 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
-            <li>In a helper that another shader includes, such as a Shadow.hlsl included by LightingUtil.hlsl,
-                completion, parameter info, hover and Ctrl+Click know what the shaders including it declare before
-                their #include of it: pass. lists the members of PassConstants, and Ctrl+Click on PassConstants
-                opens its declaration in LightingUtil.hlsl.</li>
-            <li>A struct such a helper gets from the shader including it, such as PassConstants in Shadow.hlsl,
-                is coloured as a struct name.</li>
+            <li>In a helper that another shader includes, completion, parameter info, hover and Ctrl+Click know
+                what the shaders including it declare before their #include of it, such as a constant buffer
+                struct declared by the header that includes the helper: its members are completed, and
+                Ctrl+Click opens its declaration.</li>
+            <li>A struct such a helper gets from the shader including it is coloured as a struct name.</li>
         </ul>
     ]]></change-notes>
 
