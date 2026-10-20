@@ -2,6 +2,7 @@ package com.hlsl.completion;
 
 import com.hlsl.lexer.HlslLexer;
 import com.hlsl.psi.HlslTokenTypes;
+import com.hlsl.validation.HlslCompileRoot;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -36,20 +37,25 @@ public final class HlslIncludeIndex {
     private static final int MAX_PARENT_WALK = 10;
     private static final int MAX_INCLUDE_DEPTH = 32;
 
+    private final Project project;
     private final ConcurrentHashMap<VirtualFile, Entry> cache = new ConcurrentHashMap<>();
 
-    public HlslIncludeIndex(@SuppressWarnings("unused") Project project) {
+    public HlslIncludeIndex(Project project) {
+        this.project = project;
     }
+
+    /** An {@code #include} as written: the path it names, and the offset its directive starts at. */
+    private record Include(String path, int offset) { }
 
     private static final class Entry {
         final long modificationStamp;
         final boolean fromDocument;
         final CharSequence source;
         final Set<String> identifiers;
-        final List<String> includes;
+        final List<Include> includes;
 
         Entry(long stamp, boolean fromDocument, CharSequence source,
-              Set<String> identifiers, List<String> includes) {
+              Set<String> identifiers, List<Include> includes) {
             this.modificationStamp = stamp;
             this.fromDocument = fromDocument;
             this.source = source;
@@ -74,13 +80,66 @@ public final class HlslIncludeIndex {
         return result;
     }
 
+    /**
+     * Every source code insight in {@code file} reads besides the file itself. First what the file includes;
+     * then, for a helper that other shaders include, what each shader on the chain down to it declares before
+     * its {@code #include} of the next file, the nearest shader first: its text up to that directive, followed
+     * by what that text includes. A Shadow.hlsl that LightingUtil.hlsl includes after declaring PassConstants
+     * therefore knows PassConstants, but not what LightingUtil.hlsl declares after the include.
+     *
+     * <p>{@code text} is the file as it is edited: its {@code #pragma hlsl root} picks the chain, exactly as
+     * for validation.</p>
+     */
+    public @NotNull List<CharSequence> collectVisibleSources(@Nullable VirtualFile file, @NotNull CharSequence text) {
+        if (file == null) return Collections.emptyList();
+        Entry own = getOrParse(file);
+        if (own == null) return Collections.emptyList();
+        List<CharSequence> result = new ArrayList<>();
+        Consumer<Entry> add = entry -> result.add(entry.source);
+        Set<VirtualFile> visited = new HashSet<>();
+        visited.add(file);
+        collectIncludes(file, own, visited, 0, Integer.MAX_VALUE, add);
+
+        HlslCompileRoot roots = project.getService(HlslCompileRoot.class);
+        HlslCompileRoot.Chain chain = roots == null ? null : roots.findFor(file, text);
+        if (chain == null) return result;
+        List<VirtualFile> files = chain.files();
+        // A file of the chain contributes only its text above the include, never the whole of it.
+        visited.addAll(files);
+        for (int i = files.size() - 2; i >= 0; i--) {
+            VirtualFile includer = files.get(i);
+            Entry entry = getOrParse(includer);
+            int offset = entry == null ? -1 : includeOffset(includer, entry.includes, files.get(i + 1));
+            if (offset < 0) continue;
+            result.add(entry.source.subSequence(0, offset));
+            collectIncludes(includer, entry, visited, 0, offset, add);
+        }
+        return result;
+    }
+
+    /**
+     * Where the text of {@code includer} includes {@code included}: the offset of the first {@code #include}
+     * that resolves to it, or -1 when none does.
+     */
+    public static int includeOffset(@NotNull CharSequence source, @NotNull VirtualFile includer,
+                                    @NotNull VirtualFile included) {
+        return includeOffset(includer, parseDirectives(source), included);
+    }
+
+    private static int includeOffset(VirtualFile includer, List<Include> includes, VirtualFile included) {
+        for (Include include : includes) {
+            if (included.equals(resolve(includer, include.path()))) return include.offset();
+        }
+        return -1;
+    }
+
     /** The files {@code file} includes itself, resolved the way completion resolves them. */
     public @NotNull List<VirtualFile> directIncludes(@NotNull VirtualFile file) {
         Entry entry = getOrParse(file);
         if (entry == null) return List.of();
         List<VirtualFile> result = new ArrayList<>();
-        for (String include : entry.includes) {
-            VirtualFile resolved = resolve(file, include);
+        for (Include include : entry.includes) {
+            VirtualFile resolved = resolve(file, include.path());
             if (resolved != null && !result.contains(resolved)) result.add(resolved);
         }
         return result;
@@ -91,21 +150,23 @@ public final class HlslIncludeIndex {
         if (root == null) return;
         Set<VirtualFile> visited = new HashSet<>();
         visited.add(file);
-        collectIncludes(file, root, visited, 0, consumer);
+        collectIncludes(file, root, visited, 0, Integer.MAX_VALUE, consumer);
     }
 
+    /** Follows the includes of {@code entry} whose directive starts before {@code limit}, and all of theirs. */
     private void collectIncludes(VirtualFile file, Entry entry, Set<VirtualFile> visited,
-                                 int depth, Consumer<Entry> consumer) {
+                                 int depth, int limit, Consumer<Entry> consumer) {
         ProgressManager.checkCanceled();
         if (depth >= MAX_INCLUDE_DEPTH) return;
-        for (String include : entry.includes) {
+        for (Include include : entry.includes) {
             ProgressManager.checkCanceled();
-            VirtualFile resolved = resolve(file, include);
+            if (include.offset() >= limit) break;
+            VirtualFile resolved = resolve(file, include.path());
             if (resolved == null || !visited.add(resolved)) continue;
             Entry included = getOrParse(resolved);
             if (included == null) continue;
             consumer.accept(included);
-            collectIncludes(resolved, included, visited, depth + 1, consumer);
+            collectIncludes(resolved, included, visited, depth + 1, Integer.MAX_VALUE, consumer);
         }
     }
 
@@ -135,13 +196,17 @@ public final class HlslIncludeIndex {
         // Keep the stamp captured before the snapshot, never a later stamp for older contents.
         Entry parsed = new Entry(stamp, fromDocument, source,
                 Set.copyOf(HlslCompletionAnalysis.collectExportedIdentifiers(source)),
-                List.copyOf(parseIncludes(source)));
+                List.copyOf(parseDirectives(source)));
         cache.put(file, parsed);
         return parsed;
     }
 
     static @NotNull List<String> parseIncludes(CharSequence source) {
-        List<String> includes = new ArrayList<>();
+        return parseDirectives(source).stream().map(Include::path).toList();
+    }
+
+    private static List<Include> parseDirectives(CharSequence source) {
+        List<Include> includes = new ArrayList<>();
         HlslLexer lexer = new HlslLexer();
         lexer.start(source, 0, source.length(), 0);
         boolean directiveStart = true;
@@ -154,7 +219,8 @@ public final class HlslIncludeIndex {
                 // Match only the directive itself: a #include in a macro body is not an include.
                 Matcher match = INCLUDE_PATTERN.matcher(directive);
                 if (match.find()) {
-                    includes.add(match.group(1) != null ? match.group(1) : match.group(2));
+                    includes.add(new Include(match.group(1) != null ? match.group(1) : match.group(2),
+                            lexer.getTokenStart()));
                 }
             }
             if (type == TokenType.WHITE_SPACE || type == HlslTokenTypes.LINE_COMMENT

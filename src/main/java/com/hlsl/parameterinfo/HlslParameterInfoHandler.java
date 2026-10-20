@@ -114,15 +114,16 @@ public final class HlslParameterInfoHandler
         if (file.getLanguage() != HlslLanguage.INSTANCE) return null;
         Document document = PsiDocumentManager.getInstance(file.getProject()).getDocument(file);
         if (document == null) return null;
-        return HlslCompletionAnalysis.callAt(document.getImmutableCharSequence(), context.getOffset(),
-                includeSources(file));
+        CharSequence text = document.getImmutableCharSequence();
+        return HlslCompletionAnalysis.callAt(text, context.getOffset(), includeSources(file, text));
     }
 
-    private static List<CharSequence> includeSources(PsiFile file) {
+    private static List<CharSequence> includeSources(PsiFile file, CharSequence text) {
         VirtualFile virtualFile = file.getVirtualFile();
         if (virtualFile == null) return List.of();
         HlslIncludeIndex index = file.getProject().getService(HlslIncludeIndex.class);
-        // A callee is often declared by an included helper, exactly as for completion.
-        return index == null ? List.of() : index.collectTransitiveSources(virtualFile);
+        // A callee is often declared by an included helper, or by the shader that includes this one, exactly
+        // as for completion.
+        return index == null ? List.of() : index.collectVisibleSources(virtualFile, text);
     }
 }

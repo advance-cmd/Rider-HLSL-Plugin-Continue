@@ -31,6 +31,10 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 - Case-insensitive matching, which matters because HLSL names are CamelCase
 - Locals, globals, functions, structs, macros and `const` globals from the file and its include chain, and
   semantics after a colon
+- In a helper that another shader includes, such as a `Shadow.hlsl` that `LightingUtil.hlsl` includes after
+  declaring `PassConstants`, what the shaders including it declare before their `#include` of it, together
+  with what they include up to there. The chain is the one the helper is validated through, so
+  `// #pragma hlsl root Triangle.hlsl` picks it here as well, and the helper's own declarations still win
 - Semantics are offered after a colon even while the function they belong to has no body yet, and
   `register` and `packoffset` are inserted with their parentheses
 - Attributes in square brackets, such as `[numthreads(8, 8, 1)]`, `[unroll]` or `[domain("tri")]`: accepting
@@ -43,7 +47,8 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 ### Documentation
 
 - Hover or `Ctrl+Q` on a function, variable, struct or macro shows its declaration together with the
-  comment written above it, resolved through the include chain
+  comment written above it, resolved through the include chain and, in a helper, through what the shaders
+  including it declare before their `#include` of it
 - A function's attributes, such as the `[numthreads(8, 8, 1)]` of a compute shader, are shown with its
   declaration and do not cut it off from the comment above them
 - Plain hover needs *Show quick documentation on hover* enabled in the IDE
@@ -56,12 +61,14 @@ that are compiled by a C++ build system which passes its own preprocessor macros
   `[numthreads(8, 8, 1)]` or `[unroll]` show their declaration and what they do, in the same language as the
   semantics
 - Parameter info opens by itself after a function name is completed and when `(` or `,` is typed, with the
-  argument being edited highlighted and `↑`/`↓` to move through overloads
+  argument being edited highlighted and `↑`/`↓` to move through overloads. In a helper it knows the functions
+  the shaders including it declare before their `#include` of it
 
 ### Navigation
 
 - Go to declaration (`Ctrl+Click` / `Ctrl+B`) for functions, variables and types, in the current file or in
-  any included file
+  any included file. In a helper it also reaches what the shaders including it declare before their
+  `#include` of it, so `PassConstants` in `Shadow.hlsl` opens its declaration in `LightingUtil.hlsl`
 - `Ctrl+Click` on an intrinsic function, a built-in type or an attribute opens its declaration in a read-only
   built-ins file that the plugin generates, with the description written above each declaration
 - `Ctrl+Click` on the path of an `#include` opens the included file, found next to the shader or in a

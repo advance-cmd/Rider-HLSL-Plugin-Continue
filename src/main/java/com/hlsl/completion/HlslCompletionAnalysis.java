@@ -25,8 +25,9 @@ import java.util.regex.Pattern;
  * followed by '(' a FUNCTION_CALL; that token is not evidence of a declaration or a visible symbol.
  * Unknown receiver types produce no members rather than falling back to unrelated global names.
  *
- * <p>Code completion and parameter info have the same need — what is declared in this file and in its
- * transitive include chain — so both read declarations through this class.</p>
+ * <p>Code completion and parameter info have the same need — what is declared in this file, in its
+ * transitive include chain, and in the shaders that include it above their include — so both read
+ * declarations through this class.</p>
  */
 public final class HlslCompletionAnalysis {
     enum Context { CODE, SEMANTIC, MEMBER, ATTRIBUTE, SUPPRESSED }
@@ -82,6 +83,11 @@ public final class HlslCompletionAnalysis {
             "in", "out", "inout", "row_major", "column_major", "nointerpolation", "linear", "centroid",
             "noperspective", "sample", "precise", "globallycoherent", "snorm", "unorm", "export");
     private static final Pattern DIRECTIVE = Pattern.compile("^#\\s*(define|undef)\\s+([A-Za-z_][A-Za-z0-9_]*)");
+    /**
+     * Keywords of the effect framework, which a shader is otherwise free to use as names: the pass of
+     * {@code float ViewZ(PassConstants pass, float3 posW)} is an ordinary parameter.
+     */
+    private static final Set<String> EFFECT_KEYWORDS = Set.of("pass", "technique", "technique10", "technique11");
 
     private static final Set<String> SAMPLING_TEXTURES = Set.of(
             "Texture1D", "Texture1DArray", "Texture2D", "Texture2DArray", "Texture3D",
@@ -745,7 +751,8 @@ public final class HlslCompletionAnalysis {
             return type == HlslTokenTypes.IDENTIFIER || type == HlslTokenTypes.STRUCT_NAME
                     || type == HlslTokenTypes.FUNCTION_CALL || type == HlslTokenTypes.FIELD_ACCESS
                     || type == HlslTokenTypes.SEMANTIC || type == HlslTokenTypes.BUILTIN_FUNCTION
-                    || type == HlslTokenTypes.INSTANCE_METHOD_CALL || type == HlslTokenTypes.TYPE_KEYWORD;
+                    || type == HlslTokenTypes.INSTANCE_METHOD_CALL || type == HlslTokenTypes.TYPE_KEYWORD
+                    || type == HlslTokenTypes.KEYWORD && EFFECT_KEYWORDS.contains(tokens.get(i).text);
         }
 
         /**

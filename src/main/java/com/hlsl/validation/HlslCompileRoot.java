@@ -84,6 +84,17 @@ public final class HlslCompileRoot {
         return chain(file, includers, preferredRoot);
     }
 
+    /**
+     * The chain {@code file} is compiled through according to its own text, which code insight follows as well:
+     * the shader its {@code #pragma hlsl root} names when that one includes it, and none when the file sets its
+     * own profile or entry point, because such a file is compiled on its own.
+     */
+    public @Nullable Chain findFor(@NotNull VirtualFile file, @NotNull CharSequence text) {
+        HlslDxcSource source = new HlslDxcSource(text.toString());
+        if (source.hasOption("profile") || source.hasOption("entry")) return null;
+        return find(file, source.option("root", null));
+    }
+
     /** Walks up from {@code file} through its includers and picks the root the chain starts from. */
     static @Nullable Chain chain(VirtualFile file, Map<VirtualFile, List<VirtualFile>> includers,
                                  @Nullable String preferredRoot) {

@@ -63,6 +63,16 @@ public class HlslCompletionAnalysisTest {
         assertTrue(result.candidates().isEmpty());
     }
 
+    /** pass is a keyword of the effect framework only, and a common name for a PassConstants parameter. */
+    @Test
+    public void aParameterNamedPassOffersItsMembers() {
+        HlslCompletionAnalysis.Result result = analyze(
+                "float ViewZ(PassConstants pass, float3 posW) { return mul(float4(posW, 1), pass.<caret>).w; }",
+                LIGHTING);
+        assertEquals(HlslCompletionAnalysis.Context.MEMBER, result.context());
+        assertEquals(Set.of("InvViewProj", "EyePosW", "Lights"), names(result));
+    }
+
     @Test
     public void arrayNeedsIndexBeforeItsElementMembers() {
         assertTrue(analyze("Light lights[8]; void f() { lights.<caret>; }", LIGHTING).candidates().isEmpty());

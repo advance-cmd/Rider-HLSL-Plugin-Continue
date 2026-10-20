@@ -57,7 +57,7 @@ final class HlslDocumentationLookup {
             return null;
         }
         HlslCompletionAnalysis.Declaration declaration =
-                HlslCompletionAnalysis.declarationOf(name, text, offset, includeSources(file));
+                HlslCompletionAnalysis.declarationOf(name, text, offset, includeSources(file, text));
         log(entry, file.getName() + ":" + offset + " '" + name + "'",
                 declaration == null ? "not resolved" : declaration.kind() + " " + firstLine(declaration.text()));
         return declaration;
@@ -83,12 +83,15 @@ final class HlslDocumentationLookup {
         return Character.isLetterOrDigit(c) || c == '_';
     }
 
-    /** A callee is often declared by an included helper, exactly as for completion and parameter info. */
-    static List<CharSequence> includeSources(PsiFile file) {
+    /**
+     * A callee is often declared by an included helper, or by the shader that includes this one, exactly as for
+     * completion and parameter info.
+     */
+    static List<CharSequence> includeSources(PsiFile file, CharSequence text) {
         VirtualFile virtualFile = file.getVirtualFile();
         if (virtualFile == null) return List.of();
         HlslIncludeIndex index = file.getProject().getService(HlslIncludeIndex.class);
-        return index == null ? List.of() : index.collectTransitiveSources(virtualFile);
+        return index == null ? List.of() : index.collectVisibleSources(virtualFile, text);
     }
 
     /** The declaration in bold, followed by the comment written above it. */

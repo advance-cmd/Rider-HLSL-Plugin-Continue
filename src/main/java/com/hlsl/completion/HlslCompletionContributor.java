@@ -59,9 +59,10 @@ public class HlslCompletionContributor extends CompletionContributor {
                 return;
             }
 
+            // A helper also sees what the shaders including it declare before their #include of it.
             HlslIncludeIndex index = file.getProject().getService(HlslIncludeIndex.class);
             List<CharSequence> includes = index != null && file.getVirtualFile() != null
-                    ? index.collectTransitiveSources(file.getVirtualFile()) : List.of();
+                    ? index.collectVisibleSources(file.getVirtualFile(), source) : List.of();
             HlslCompletionAnalysis.Result analysis = HlslCompletionAnalysis.analyze(source, offset, includes);
             if (analysis.context() == HlslCompletionAnalysis.Context.SUPPRESSED) {
                 stop(result, lookup);

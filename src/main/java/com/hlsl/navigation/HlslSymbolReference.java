@@ -1,6 +1,8 @@
 package com.hlsl.navigation;
 
+import com.hlsl.completion.HlslIncludeIndex;
 import com.hlsl.psi.HlslTokenTypes;
+import com.hlsl.validation.HlslCompileRoot;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -12,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -55,11 +58,18 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
             return found;
         }
 
-        PsiElement viaInclude = findInIncludes(file, symbol, preferFunction, new HashSet<>(), 0);
+        Set<String> visited = new HashSet<>();
+        PsiElement viaInclude = findInIncludes(file, symbol, preferFunction, visited, 0, Integer.MAX_VALUE);
         LOG.debug("HLSL resolve: include search " + (viaInclude != null
                 ? ("found in " + viaInclude.getContainingFile().getVirtualFile().getPath())
                 : "returned null"));
-        return viaInclude;
+        if (viaInclude != null) return viaInclude;
+
+        PsiElement viaIncluder = findInIncluders(file, symbol, preferFunction, visited);
+        LOG.debug("HLSL resolve: includer search " + (viaIncluder != null
+                ? ("found in " + viaIncluder.getContainingFile().getVirtualFile().getPath())
+                : "returned null"));
+        return viaIncluder;
     }
 
     private static @Nullable PsiElement findInFile(PsiFile file,
@@ -81,11 +91,41 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
         return findSymbolElementAt(file, decl, symbol);
     }
 
+    /**
+     * A helper such as Shadow.hlsl uses what the shader including it declares before its {@code #include} of
+     * it, so the shaders on the chain down to the file are searched as well, the nearest one first, each only
+     * above that include: its own text, then what that text includes.
+     */
+    private static @Nullable PsiElement findInIncluders(PsiFile file,
+                                                        String symbol,
+                                                        boolean preferFunction,
+                                                        Set<String> visited) {
+        VirtualFile vf = file.getVirtualFile();
+        if (vf == null) return null;
+        HlslCompileRoot roots = file.getProject().getService(HlslCompileRoot.class);
+        HlslCompileRoot.Chain chain = roots == null ? null : roots.findFor(vf, file.getText());
+        if (chain == null) return null;
+        List<VirtualFile> files = chain.files();
+        for (int i = files.size() - 2; i >= 0; i--) {
+            PsiFile includer = PsiManager.getInstance(file.getProject()).findFile(files.get(i));
+            if (includer == null) continue;
+            int includeOffset = HlslIncludeIndex.includeOffset(includer.getText(), files.get(i), files.get(i + 1));
+            if (includeOffset < 0) continue;
+            PsiElement found = findInFile(includer, symbol, preferFunction, includeOffset);
+            if (found != null) return found;
+            PsiElement deeper = findInIncludes(includer, symbol, preferFunction, visited, 0, includeOffset);
+            if (deeper != null) return deeper;
+        }
+        return null;
+    }
+
+    /** Searches the files {@code file} includes before {@code limit}, and everything they include. */
     private static @Nullable PsiElement findInIncludes(PsiFile file,
                                                        String symbol,
                                                        boolean preferFunction,
                                                        Set<String> visited,
-                                                       int depth) {
+                                                       int depth,
+                                                       int limit) {
         if (depth > MAX_INCLUDE_DEPTH) return null;
         VirtualFile vf = file.getVirtualFile();
         if (vf == null) return null;
@@ -97,7 +137,7 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
         if (content == null) return null;
 
         Matcher m = INCLUDE_PATTERN.matcher(content);
-        while (m.find()) {
+        while (m.find() && m.start(1) < limit) {
             String includePath = m.group(1);
             VirtualFile included = baseDir.findFileByRelativePath(includePath);
             if (included == null || !included.exists() || included.isDirectory()) {
@@ -114,7 +154,8 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
             PsiElement found = findInFile(includedPsi, symbol, preferFunction, Integer.MAX_VALUE);
             if (found != null) return found;
 
-            PsiElement deeper = findInIncludes(includedPsi, symbol, preferFunction, visited, depth + 1);
+            PsiElement deeper = findInIncludes(includedPsi, symbol, preferFunction, visited, depth + 1,
+                    Integer.MAX_VALUE);
             if (deeper != null) return deeper;
         }
         return null;
