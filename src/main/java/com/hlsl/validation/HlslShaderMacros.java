@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 /**
  * Reads the macros a build system hands to the shader compiler, e.g.
- * {@code const D3D_SHADER_MACRO lightDefines[] = { {"NUM_DIR_LIGHTS", "1"}, {nullptr, nullptr} };}.
+ * {@code const D3D_SHADER_MACRO defines[] = { {"LIGHT_COUNT", "4"}, {nullptr, nullptr} };}.
  * DXC compiles the shader standalone and cannot see them, so a shader that relies on build-provided
  * macros would otherwise report phantom "undeclared identifier" errors.
  */

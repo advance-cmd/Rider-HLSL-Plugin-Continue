@@ -46,8 +46,8 @@ public class HlslCompletionContributor extends CompletionContributor {
             PsiFile file = parameters.getOriginalFile();
             if (file.getLanguage() != HlslLanguage.INSTANCE) return;
 
-            // HLSL names are CamelCase (Texture2D, InvViewProj, GetDimensions), so a lowercase prefix such
-            // as "gPass.inv" must still match them. Relying on the platform's matcher silently dropped every
+            // HLSL names are CamelCase (Texture2D, ClipToWorld, GetDimensions), so a lowercase prefix such
+            // as "gFrame.clip" must still match them. Relying on the platform's matcher silently dropped every
             // candidate under a case-sensitive setting, which looked like "no completion at all".
             CompletionResultSet lookup = caseInsensitive(result);
 
@@ -169,7 +169,7 @@ public class HlslCompletionContributor extends CompletionContributor {
     }
 
     /**
-     * The platform's matcher is case sensitive, which hides every CamelCase HLSL name (InvViewProj,
+     * The platform's matcher is case sensitive, which hides every CamelCase HLSL name (ClipToWorld,
      * GetDimensions, Texture2D) as soon as the typed prefix uses different capitalisation.
      */
     private static final class CaseInsensitivePrefixMatcher extends PrefixMatcher {

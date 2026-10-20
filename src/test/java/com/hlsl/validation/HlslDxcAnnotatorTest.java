@@ -11,11 +11,11 @@ public class HlslDxcAnnotatorTest {
     @Test
     public void quotedIncludePathsAndDefinitionsStaySingleArguments() {
         HlslDxcSettings.State settings = new HlslDxcSettings.State();
-        settings.additionalArgs = "-I \"C:\\Shader Includes\\Common\" -DNUM_DIR_LIGHTS=1 -DNAME=\"Hello World\"";
-        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Deferred.hlsl", 1, settings);
+        settings.additionalArgs = "-I \"C:\\Shader Includes\\Common\" -DSUN_COUNT=1 -DNAME=\"Hello World\"";
+        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Composite.hlsl", 1, settings);
         List<String> args = HlslDxcAnnotator.buildCommand(info, "dxc", Path.of("source.hlsl"), Path.of("shader.dxil"));
         assertTrue(args.contains("C:\\Shader Includes\\Common"));
-        assertTrue(args.contains("-DNUM_DIR_LIGHTS=1"));
+        assertTrue(args.contains("-DSUN_COUNT=1"));
         assertTrue(args.contains("-DNAME=Hello World"));
         assertFalse(args.contains("Includes\\Common\""));
     }
@@ -35,7 +35,7 @@ public class HlslDxcAnnotatorTest {
     @Test
     public void quietByDefaultAndOnlyWithWarningFlagsDxcUnderstands() {
         HlslDxcSettings.State settings = new HlslDxcSettings.State();
-        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Deferred.hlsl", 1, settings);
+        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Composite.hlsl", 1, settings);
         List<String> args = HlslDxcAnnotator.buildCommand(info, "dxc", Path.of("source.hlsl"), Path.of("shader.dxil"));
         assertFalse("clang's full warning set must stay opt-in", args.contains("-Weverything"));
         assertFalse("no extra warning groups are enabled by default", args.contains("-Wconversion"));
@@ -48,14 +48,14 @@ public class HlslDxcAnnotatorTest {
     @Test
     public void configuredMacrosAndWarningGroupsReachTheCommandLine() {
         HlslDxcSettings.State settings = new HlslDxcSettings.State();
-        settings.preprocessorDefines = "NUM_DIR_LIGHTS=1; NUM_POINT_LIGHTS=1, NUM_SPOT_LIGHTS=1";
+        settings.preprocessorDefines = "SUN_COUNT=1; LAMP_COUNT=1, SPOT_COUNT=1";
         settings.warnImplicitTruncation = true;
         settings.warnUnusedParameter = true;
-        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Deferred.hlsl", 1, settings);
+        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Composite.hlsl", 1, settings);
         List<String> args = HlslDxcAnnotator.buildCommand(info, "dxc", Path.of("source.hlsl"), Path.of("shader.dxil"));
-        assertTrue(args.contains("-DNUM_DIR_LIGHTS=1"));
-        assertTrue(args.contains("-DNUM_POINT_LIGHTS=1"));
-        assertTrue(args.contains("-DNUM_SPOT_LIGHTS=1"));
+        assertTrue(args.contains("-DSUN_COUNT=1"));
+        assertTrue(args.contains("-DLAMP_COUNT=1"));
+        assertTrue(args.contains("-DSPOT_COUNT=1"));
         // DXC reports implicit truncation of vector type under -Wconversion.
         assertTrue(args.contains("-Wconversion"));
         assertTrue(args.contains("-Wunused-parameter"));
@@ -65,7 +65,7 @@ public class HlslDxcAnnotatorTest {
     public void fullClangWarningsSuppressTheGroupsThatAreUnchecked() {
         HlslDxcSettings.State settings = new HlslDxcSettings.State();
         settings.extraClangWarnings = true;
-        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Deferred.hlsl", 1, settings);
+        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Composite.hlsl", 1, settings);
         List<String> args = HlslDxcAnnotator.buildCommand(info, "dxc", Path.of("source.hlsl"), Path.of("shader.dxil"));
         assertTrue(args.contains("-Weverything"));
         assertTrue(args.contains("-Wno-unused-variable"));
@@ -75,23 +75,23 @@ public class HlslDxcAnnotatorTest {
     @Test
     public void detectedBuildMacrosBecomeDefineArgumentsAndSettingsWin() {
         HlslDxcSettings.State settings = new HlslDxcSettings.State();
-        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Deferred.hlsl", 1, settings,
-                List.of("NUM_DIR_LIGHTS=1", "NUM_SPOT_LIGHTS=1"));
+        HlslDxcAnnotator.CollectedInfo info = new HlslDxcAnnotator.CollectedInfo("", "build/Composite.hlsl", 1, settings,
+                List.of("SUN_COUNT=1", "SPOT_COUNT=1"));
         List<String> args = HlslDxcAnnotator.buildCommand(info, "dxc", Path.of("source.hlsl"), Path.of("shader.dxil"));
-        assertTrue(args.contains("-DNUM_DIR_LIGHTS=1"));
-        assertTrue(args.contains("-DNUM_SPOT_LIGHTS=1"));
+        assertTrue(args.contains("-DSUN_COUNT=1"));
+        assertTrue(args.contains("-DSPOT_COUNT=1"));
 
-        settings.preprocessorDefines = "NUM_DIR_LIGHTS=4";
+        settings.preprocessorDefines = "SUN_COUNT=4";
         List<String> overridden = HlslDxcAnnotator.buildCommand(info, "dxc",
                 Path.of("source.hlsl"), Path.of("shader.dxil"));
-        assertTrue("an explicitly configured macro must win", overridden.contains("-DNUM_DIR_LIGHTS=4"));
-        assertFalse(overridden.contains("-DNUM_DIR_LIGHTS=1"));
-        assertTrue(overridden.contains("-DNUM_SPOT_LIGHTS=1"));
+        assertTrue("an explicitly configured macro must win", overridden.contains("-DSUN_COUNT=4"));
+        assertFalse(overridden.contains("-DSUN_COUNT=1"));
+        assertTrue(overridden.contains("-DSPOT_COUNT=1"));
 
         settings.preprocessorDefines = "";
         settings.autoDetectBuildMacros = false;
         List<String> off = HlslDxcAnnotator.buildCommand(info, "dxc", Path.of("source.hlsl"), Path.of("shader.dxil"));
-        assertFalse(off.contains("-DNUM_SPOT_LIGHTS=1"));
+        assertFalse(off.contains("-DSPOT_COUNT=1"));
     }
 
     @Test
@@ -108,7 +108,7 @@ public class HlslDxcAnnotatorTest {
         HlslDxcSettings settings = new HlslDxcSettings();
         HlslDxcSettings.State snapshot = settings.snapshot();
         assertTrue(settings.matches(snapshot));
-        settings.setAdditionalArgs("-DNUM_DIR_LIGHTS=1");
+        settings.setAdditionalArgs("-DSUN_COUNT=1");
         assertEquals("", snapshot.additionalArgs);
         assertFalse(settings.matches(snapshot));
         settings.setAdditionalArgs("");

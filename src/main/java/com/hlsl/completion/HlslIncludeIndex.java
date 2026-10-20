@@ -84,8 +84,8 @@ public final class HlslIncludeIndex {
      * Every source code insight in {@code file} reads besides the file itself. First what the file includes;
      * then, for a helper that other shaders include, what each shader on the chain down to it declares before
      * its {@code #include} of the next file, the nearest shader first: its text up to that directive, followed
-     * by what that text includes. A Shadow.hlsl that LightingUtil.hlsl includes after declaring PassConstants
-     * therefore knows PassConstants, but not what LightingUtil.hlsl declares after the include.
+     * by what that text includes. A helper that a shared header includes after declaring FrameConstants
+     * therefore knows FrameConstants, but not what the header declares after the include.
      *
      * <p>{@code text} is the file as it is edited: its {@code #pragma hlsl root} picks the chain, exactly as
      * for validation.</p>

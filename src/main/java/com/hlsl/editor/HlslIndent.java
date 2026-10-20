@@ -124,7 +124,7 @@ public final class HlslIndent {
 
     /**
      * True when a control keyword opens the statement and the parenthesis that ends it belongs to that
-     * keyword, which is what separates {@code if (dist > 0)} from a call such as {@code ApplyFog(a, b)}.
+     * keyword, which is what separates {@code if (dist > 0)} from a call such as {@code Blend(a, b)}.
      */
     private static boolean startsWithKeywordBeforeParen(String trimmed) {
         String header = trimmed.contains("{") ? trimmed.substring(0, trimmed.indexOf('{')) : trimmed;

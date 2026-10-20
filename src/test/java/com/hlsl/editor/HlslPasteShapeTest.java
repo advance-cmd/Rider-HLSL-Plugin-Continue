@@ -18,14 +18,14 @@ public class HlslPasteShapeTest extends BasePlatformTestCase {
      * put the copied text above the line because it indented the line and moved what was already there down.
      */
     public void testPastingASingleLineComment() {
-        paste("float4 PS(float2 aoPixel) : SV_Target\n{\n    int dir = 1;\n    int2 a = aoPixel + dir;<caret>\n}\n",
-                "// 左右（或上下）各 5 个邻居，i = 0 是自己");
+        paste("float4 PS(float2 texel) : SV_Target\n{\n    int dir = 1;\n    int2 a = texel + dir;<caret>\n}\n",
+                "// 前后各取几个样本，i = 0 是中心");
         assertEquals("""
-                float4 PS(float2 aoPixel) : SV_Target
+                float4 PS(float2 texel) : SV_Target
                 {
                     int dir = 1;
-                    int2 a = aoPixel + dir;
-                    // 左右（或上下）各 5 个邻居，i = 0 是自己
+                    int2 a = texel + dir;
+                    // 前后各取几个样本，i = 0 是中心
                 }
                 """, documentText());
     }
@@ -35,15 +35,15 @@ public class HlslPasteShapeTest extends BasePlatformTestCase {
      * line they were pasted into, in the order they were copied.
      */
     public void testPastingTwoUnindentedLinesFollowsTheLine() {
-        paste("float4 PS(float2 aoPixel) : SV_Target\n{\n    int dir = 1;\n    int2 a = aoPixel + dir;<caret>\n}\n",
-                "// 左右（或上下）各 5 个邻居，i = 0 是自己\nint2 a = aoPixel + i * dir;");
+        paste("float4 PS(float2 texel) : SV_Target\n{\n    int dir = 1;\n    int2 a = texel + dir;<caret>\n}\n",
+                "// 前后各取几个样本，i = 0 是中心\nint2 a = texel + i * dir;");
         assertEquals("""
-                float4 PS(float2 aoPixel) : SV_Target
+                float4 PS(float2 texel) : SV_Target
                 {
                     int dir = 1;
-                    int2 a = aoPixel + dir;
-                    // 左右（或上下）各 5 个邻居，i = 0 是自己
-                    int2 a = aoPixel + i * dir;
+                    int2 a = texel + dir;
+                    // 前后各取几个样本，i = 0 是中心
+                    int2 a = texel + i * dir;
                 }
                 """, documentText());
     }
@@ -70,20 +70,20 @@ public class HlslPasteShapeTest extends BasePlatformTestCase {
      */
     public void testPastingABracedBlockPlacesItsBracesByTheStatement() {
         String block = """
-                if (i == 0 || (dot(neighborN, centerN) >= 0.8f && abs(neighborZ - centerZ) <= 0.2f))
+                if (i == 0 || (mask.x > 0.5f && mask.y > 0.5f && mask.z > 0.5f))
                         {
-                            sum += kBlurWeights[空32] * gAoMap.Load(int3(空33, 0)); // i 是 -5～5，数组下标是 0～10
-                            weightSum += kBlurWeights[空32];
+                            sum += kWeights[空32] * gSource.Load(int3(空33, 0)); // 下标从 0 开始
+                            total += kWeights[空32];
                         }""";
         paste("float4 PS(float2 pixel) : SV_Target\n{\n    float sum = 0;\n    <caret>\n}\n", indent(block, 4));
         assertEquals("""
                 float4 PS(float2 pixel) : SV_Target
                 {
                     float sum = 0;
-                    if (i == 0 || (dot(neighborN, centerN) >= 0.8f && abs(neighborZ - centerZ) <= 0.2f))
+                    if (i == 0 || (mask.x > 0.5f && mask.y > 0.5f && mask.z > 0.5f))
                     {
-                        sum += kBlurWeights[空32] * gAoMap.Load(int3(空33, 0)); // i 是 -5～5，数组下标是 0～10
-                        weightSum += kBlurWeights[空32];
+                        sum += kWeights[空32] * gSource.Load(int3(空33, 0)); // 下标从 0 开始
+                        total += kWeights[空32];
                     }
                 }
                 """, documentText());
@@ -92,9 +92,9 @@ public class HlslPasteShapeTest extends BasePlatformTestCase {
     /** The same block, pasted into a nested block, lands two levels in with its braces aligned. */
     public void testPastingABracedBlockIntoANestedBlock() {
         String block = """
-                if (i == 0 || (dot(neighborN, centerN) >= 0.8f && abs(neighborZ - centerZ) <= 0.2f))
+                if (i == 0 || (mask.x > 0.5f && mask.y > 0.5f && mask.z > 0.5f))
                         {
-                            sum += kBlurWeights[空32];
+                            sum += kWeights[空32];
                         }""";
         paste("float4 PS(float2 pixel) : SV_Target\n{\n    if (pixel.x > 0)\n    {\n        <caret>\n    }\n}\n",
                 indent(block, 4));
@@ -103,9 +103,9 @@ public class HlslPasteShapeTest extends BasePlatformTestCase {
                 {
                     if (pixel.x > 0)
                     {
-                        if (i == 0 || (dot(neighborN, centerN) >= 0.8f && abs(neighborZ - centerZ) <= 0.2f))
+                        if (i == 0 || (mask.x > 0.5f && mask.y > 0.5f && mask.z > 0.5f))
                         {
-                            sum += kBlurWeights[空32];
+                            sum += kWeights[空32];
                         }
                     }
                 }

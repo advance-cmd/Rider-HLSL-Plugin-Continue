@@ -17,9 +17,9 @@ public class HlslPasteTest extends BasePlatformTestCase {
 
     /** The block the user copied: three statements, four spaces in, as they sit in a function body. */
     private static final String BLOCK = """
-                float3 p = WorldPosAt(pixel);
-                float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);
-                float3 randVec = RandomVec(int2(pin.PosH.xy));""";
+                float3 p = PositionAt(pixel);
+                float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);
+                float3 randDir = RandomDir(int2(pin.ClipPos.xy));""";
 
     /** Pasting into an empty file keeps the block exactly as it was copied. */
     public void testPastingAnIndentedBlockKeepsItsIndentation() {
@@ -33,9 +33,9 @@ public class HlslPasteTest extends BasePlatformTestCase {
         assertEquals("""
                 float4 PS(float2 pixel) : SV_Target
                 {
-                    float3 p = WorldPosAt(pixel);
-                    float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);
-                    float3 randVec = RandomVec(int2(pin.PosH.xy));
+                    float3 p = PositionAt(pixel);
+                    float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);
+                    float3 randDir = RandomDir(int2(pin.ClipPos.xy));
                 }
                 """, documentText());
     }
@@ -46,9 +46,9 @@ public class HlslPasteTest extends BasePlatformTestCase {
         assertEquals("""
                 float4 PS(float2 pixel) : SV_Target
                 {
-                    float3 p = WorldPosAt(pixel);
-                    float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);
-                    float3 randVec = RandomVec(int2(pin.PosH.xy));
+                    float3 p = PositionAt(pixel);
+                    float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);
+                    float3 randDir = RandomDir(int2(pin.ClipPos.xy));
                 }
                 """, documentText());
     }
@@ -56,13 +56,13 @@ public class HlslPasteTest extends BasePlatformTestCase {
     /** A block copied without indentation gains the indentation of the line it is pasted on. */
     public void testPastingAnUnindentedBlockIntoABlock() {
         paste("float4 PS(float2 pixel) : SV_Target\n{\n    <caret>\n}\n", """
-                float3 p = WorldPosAt(pixel);
-                float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);""");
+                float3 p = PositionAt(pixel);
+                float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);""");
         assertEquals("""
                 float4 PS(float2 pixel) : SV_Target
                 {
-                    float3 p = WorldPosAt(pixel);
-                    float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);
+                    float3 p = PositionAt(pixel);
+                    float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);
                 }
                 """, documentText());
     }
@@ -75,9 +75,9 @@ public class HlslPasteTest extends BasePlatformTestCase {
                 {
                     if (pixel.x > 0)
                     {
-                        float3 p = WorldPosAt(pixel);
-                        float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);
-                        float3 randVec = RandomVec(int2(pin.PosH.xy));
+                        float3 p = PositionAt(pixel);
+                        float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);
+                        float3 randDir = RandomDir(int2(pin.ClipPos.xy));
                     }
                 }
                 """, documentText());
@@ -90,9 +90,9 @@ public class HlslPasteTest extends BasePlatformTestCase {
                 float4 PS(float2 pixel) : SV_Target
                 {
                     float3 x = 1;
-                    float3 p = WorldPosAt(pixel);
-                    float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);
-                    float3 randVec = RandomVec(int2(pin.PosH.xy));
+                    float3 p = PositionAt(pixel);
+                    float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);
+                    float3 randDir = RandomDir(int2(pin.ClipPos.xy));
                 }
                 """, documentText());
     }
@@ -124,12 +124,12 @@ public class HlslPasteTest extends BasePlatformTestCase {
         assertEquals("""
                 float4 PS(float2 pixel) : SV_Target
                 {
-                    float3 p = WorldPosAt(pixel);
-                    float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);
-                    float3 randVec = RandomVec(int2(pin.PosH.xy));
-                    float3 p = WorldPosAt(pixel);
-                    float3 n = normalize(gGBuffer1.Load(int3(pixel, 0)).xyz);
-                    float3 randVec = RandomVec(int2(pin.PosH.xy));
+                    float3 p = PositionAt(pixel);
+                    float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);
+                    float3 randDir = RandomDir(int2(pin.ClipPos.xy));
+                    float3 p = PositionAt(pixel);
+                    float3 n = normalize(gNormals.Load(int3(pixel, 0)).xyz);
+                    float3 randDir = RandomDir(int2(pin.ClipPos.xy));
                 }
                 """, documentText());
     }

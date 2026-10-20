@@ -92,7 +92,7 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
     }
 
     /**
-     * A helper such as Shadow.hlsl uses what the shader including it declares before its {@code #include} of
+     * A helper that another shader includes uses what that shader declares before its {@code #include} of
      * it, so the shaders on the chain down to the file are searched as well, the nearest one first, each only
      * above that include: its own text, then what that text includes.
      */

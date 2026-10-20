@@ -102,18 +102,18 @@ public class HlslIncludeIndexTest extends BasePlatformTestCase {
 
     public void testSourcesExposeImmutableUnsavedTypeSnapshots() {
         VirtualFile library = myFixture.addFileToProject("types.hlsli",
-                "struct PassConstants { float Exposure; };").getVirtualFile();
+                "struct FrameConstants { float Gain; };").getVirtualFile();
         VirtualFile root = myFixture.addFileToProject("main.hlsl", "#include \"types.hlsli\"").getVirtualFile();
         HlslIncludeIndex index = index();
         List<CharSequence> before = index.collectTransitiveSources(root);
         assertEquals(1, before.size());
 
-        replaceDocument(library, "struct PassConstants { float4 Lights[16]; };");
+        replaceDocument(library, "struct FrameConstants { float4 LightList[16]; };");
 
         List<CharSequence> after = index.collectTransitiveSources(root);
         assertEquals(1, after.size());
-        assertTrue(after.get(0).toString().contains("Lights[16]"));
-        assertTrue(before.get(0).toString().contains("Exposure"));
+        assertTrue(after.get(0).toString().contains("LightList[16]"));
+        assertTrue(before.get(0).toString().contains("Gain"));
     }
 
     public void testCyclesAreVisitedOnceAndDoNotExportRootSymbols() {

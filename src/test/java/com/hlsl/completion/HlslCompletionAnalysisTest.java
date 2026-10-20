@@ -10,41 +10,41 @@ import static org.junit.Assert.*;
 
 public class HlslCompletionAnalysisTest {
     private static final String LIGHTING = """
-            #define MaxLights 100
-            struct Light { float3 Strength; float FalloffStart; float3 Direction;
-                           float FalloffEnd; float3 Position; float SpotPower; };
-            struct PassConstants { float4x4 InvViewProj; float3 EyePosW; Light Lights[MaxLights]; };
-            float3 ComputeLight(Light light) { float hiddenInHeader = 1; return light.Strength; }
+            #define MaxLightCount 100
+            struct Light { float3 Intensity; float RangeStart; float3 Direction;
+                           float RangeEnd; float3 Position; float ConeExponent; };
+            struct FrameConstants { float4x4 ClipToWorld; float3 CameraPos; Light LightList[MaxLightCount]; };
+            float3 ComputeLight(Light light) { float hiddenInHeader = 1; return light.Intensity; }
             """;
 
     @Test
     public void constantBufferUsesIncludedStructureFields() {
         HlslCompletionAnalysis.Result result = analyze("""
-                #include "LightingUtil.hlsl"
-                ConstantBuffer<PassConstants> gPass : register(b1);
-                void VS(uint id) { Light L = gPass.<caret>Lights[id]; }
+                #include "Shared.hlsl"
+                ConstantBuffer<FrameConstants> gFrame : register(b1);
+                void VS(uint id) { Light L = gFrame.<caret>LightList[id]; }
                 """, LIGHTING);
         assertEquals(HlslCompletionAnalysis.Context.MEMBER, result.context());
-        assertEquals(Set.of("InvViewProj", "EyePosW", "Lights"), names(result));
+        assertEquals(Set.of("ClipToWorld", "CameraPos", "LightList"), names(result));
     }
 
     @Test
     public void followsArrayIndexAndConstantBufferMemberChain() {
         HlslCompletionAnalysis.Result result = analyze("""
-                ConstantBuffer<PassConstants> gPass : register(b1);
-                void VS(uint id) { gPass.Lights[1 + id].<caret>; }
+                ConstantBuffer<FrameConstants> gFrame : register(b1);
+                void VS(uint id) { gFrame.LightList[1 + id].<caret>; }
                 """, LIGHTING);
-        assertEquals(Set.of("Strength", "FalloffStart", "Direction", "FalloffEnd", "Position", "SpotPower"), names(result));
+        assertEquals(Set.of("Intensity", "RangeStart", "Direction", "RangeEnd", "Position", "ConeExponent"), names(result));
     }
 
     @Test
     public void localLightUsesItsDeclaredType() {
         HlslCompletionAnalysis.Result result = analyze("""
-                ConstantBuffer<PassConstants> gPass : register(b1);
-                void VS(uint id) { Light L = gPass.Lights[id]; L.<caret>; }
+                ConstantBuffer<FrameConstants> gFrame : register(b1);
+                void VS(uint id) { Light L = gFrame.LightList[id]; L.<caret>; }
                 """, LIGHTING);
-        assertTrue(names(result).containsAll(Set.of("Strength", "Position", "FalloffEnd")));
-        assertFalse(names(result).contains("Lights"));
+        assertTrue(names(result).containsAll(Set.of("Intensity", "Position", "RangeEnd")));
+        assertFalse(names(result).contains("LightList"));
     }
 
     @Test
@@ -63,14 +63,14 @@ public class HlslCompletionAnalysisTest {
         assertTrue(result.candidates().isEmpty());
     }
 
-    /** pass is a keyword of the effect framework only, and a common name for a PassConstants parameter. */
+    /** pass is a keyword of the effect framework only, and a common name for a FrameConstants parameter. */
     @Test
     public void aParameterNamedPassOffersItsMembers() {
         HlslCompletionAnalysis.Result result = analyze(
-                "float ViewZ(PassConstants pass, float3 posW) { return mul(float4(posW, 1), pass.<caret>).w; }",
+                "float DepthOf(FrameConstants pass, float3 worldPos) { return mul(float4(worldPos, 1), pass.<caret>).w; }",
                 LIGHTING);
         assertEquals(HlslCompletionAnalysis.Context.MEMBER, result.context());
-        assertEquals(Set.of("InvViewProj", "EyePosW", "Lights"), names(result));
+        assertEquals(Set.of("ClipToWorld", "CameraPos", "LightList"), names(result));
     }
 
     @Test
@@ -157,10 +157,10 @@ public class HlslCompletionAnalysisTest {
     @Test
     public void includeLocalsNeverLeakIntoCurrentFile() {
         Set<String> names = names(analyze("void f() { <caret> }", LIGHTING));
-        assertTrue(names.containsAll(Set.of("Light", "PassConstants", "ComputeLight", "MaxLights")));
+        assertTrue(names.containsAll(Set.of("Light", "FrameConstants", "ComputeLight", "MaxLightCount")));
         assertFalse(names.contains("light"));
         assertFalse(names.contains("hiddenInHeader"));
-        assertFalse(names.contains("Strength"));
+        assertFalse(names.contains("Intensity"));
     }
 
     @Test
@@ -199,7 +199,7 @@ public class HlslCompletionAnalysisTest {
     @Test
     public void parameterSemanticIsRecognisedBeforeTheBodyIsWritten() {
         assertEquals(HlslCompletionAnalysis.Context.SEMANTIC,
-                analyze("[numthreads(8, 8, 1)]\nvoid CS_Irradiance(uint3 id : SV_Disp<caret>)").context());
+                analyze("[numthreads(8, 8, 1)]\nvoid CS_Main(uint3 id : SV_Disp<caret>)").context());
         assertEquals(HlslCompletionAnalysis.Context.SEMANTIC,
                 analyze("float4 PS(float4 pos : SV_Position) : SV_<caret>").context());
         assertEquals(HlslCompletionAnalysis.Context.SEMANTIC,
@@ -223,21 +223,21 @@ public class HlslCompletionAnalysisTest {
     @Test
     public void attributeKeepsTheCommentAboveAComputeShader() {
         String source = """
-                float3 TangentToWorld(float3 d, float3 n) { return d; }
+                float3 ToWorld(float3 d, float3 n) { return d; }
 
-                // ======================== ① 辐照度图 ========================
-                // E(n) = ∫半球 L(ω) cosθ dω，dω = sinθ dθ dφ。存 E / π：用的时候乘上漫反射颜色就是漫反射
+                // ======================== ① 第一步 ========================
+                // 每个线程处理一个像素，结果除以 π 后写入输出纹理
                 [numthreads(8,8,1)]
-                void CS_Irradiance(uint3 id: SV_DispatchThreadID){
+                void CS_Main(uint3 id: SV_DispatchThreadID){
                 }
                 """;
         HlslCompletionAnalysis.Declaration declaration =
-                HlslCompletionAnalysis.declarationOf("CS_Irradiance", source, source.length(), List.of());
+                HlslCompletionAnalysis.declarationOf("CS_Main", source, source.length(), List.of());
         assertNotNull(declaration);
-        assertEquals("// ======================== ① 辐照度图 ========================\n"
-                + "// E(n) = ∫半球 L(ω) cosθ dω，dω = sinθ dθ dφ。存 E / π：用的时候乘上漫反射颜色就是漫反射",
+        assertEquals("// ======================== ① 第一步 ========================\n"
+                + "// 每个线程处理一个像素，结果除以 π 后写入输出纹理",
                 declaration.comment());
-        assertEquals("[numthreads(8,8,1)]\nvoid CS_Irradiance(uint3 id: SV_DispatchThreadID)", declaration.text());
+        assertEquals("[numthreads(8,8,1)]\nvoid CS_Main(uint3 id: SV_DispatchThreadID)", declaration.text());
     }
 
     @Test

@@ -10,10 +10,10 @@ public class HlslIndentTest extends BasePlatformTestCase {
 
     /** The reported case: the caret is already between the braces. */
     public void testEnterInsideAnEmptyFunctionBody() {
-        myFixture.configureByText(HlslFileType.INSTANCE, "float OcclusionFunction(float dist) {<caret>}");
+        myFixture.configureByText(HlslFileType.INSTANCE, "float Falloff(float dist) {<caret>}");
         enter();
         myFixture.checkResult("""
-                float OcclusionFunction(float dist) {
+                float Falloff(float dist) {
                     <caret>
                 }""");
     }
@@ -21,12 +21,12 @@ public class HlslIndentTest extends BasePlatformTestCase {
     /** The same block, but written with the brace on its own line. */
     public void testEnterAfterAnOpeningBraceOnItsOwnLine() {
         myFixture.configureByText(HlslFileType.INSTANCE, """
-                float OcclusionFunction(float dist)
+                float Falloff(float dist)
                 {<caret>
                 }""");
         enter();
         myFixture.checkResult("""
-                float OcclusionFunction(float dist)
+                float Falloff(float dist)
                 {
                     <caret>
                 }""");
@@ -55,10 +55,10 @@ public class HlslIndentTest extends BasePlatformTestCase {
     /** A function written on one line keeps the surrounding code untouched. */
     public void testEnterInsideAnEmptyBodyDoesNotTouchTheSurroundingCode() {
         myFixture.configureByText(HlslFileType.INSTANCE,
-                "float3 c = ApplyFog(color, dist);\nfloat f() {<caret>}\n");
+                "float3 c = AddHaze(color, dist);\nfloat f() {<caret>}\n");
         enter();
         myFixture.checkResult("""
-                float3 c = ApplyFog(color, dist);
+                float3 c = AddHaze(color, dist);
                 float f() {
                     <caret>
                 }
@@ -67,10 +67,10 @@ public class HlslIndentTest extends BasePlatformTestCase {
 
     /** Parentheses are not a block: Enter inside a call must not add a body. */
     public void testEnterInsideParenthesesIsNotRewritten() {
-        myFixture.configureByText(HlslFileType.INSTANCE, "float3 c = ApplyFog(<caret>);");
+        myFixture.configureByText(HlslFileType.INSTANCE, "float3 c = AddHaze(<caret>);");
         enter();
         assertTrue("the call must not gain a block: " + documentText(),
-                documentText().startsWith("float3 c = ApplyFog(\n"));
+                documentText().startsWith("float3 c = AddHaze(\n"));
         assertFalse("a closing paren must not be moved to its own line", documentText().contains(")\n"));
     }
 
@@ -138,14 +138,14 @@ public class HlslIndentTest extends BasePlatformTestCase {
         myFixture.configureByText(HlslFileType.INSTANCE, """
                 float4 PS_Deferred(float2 pixel) : SV_Target
                 {
-                    if (gDepthMap.Load(int3(pixel, 0)) >= 1.0f)
+                    if (gDepth.Load(int3(pixel, 0)) >= 1.0f)
                         return 1.0f;<caret>
                 }""");
         enter();
         myFixture.checkResult("""
                 float4 PS_Deferred(float2 pixel) : SV_Target
                 {
-                    if (gDepthMap.Load(int3(pixel, 0)) >= 1.0f)
+                    if (gDepth.Load(int3(pixel, 0)) >= 1.0f)
                         return 1.0f;
                     <caret>
                 }""");
@@ -208,13 +208,13 @@ public class HlslIndentTest extends BasePlatformTestCase {
         myFixture.configureByText(HlslFileType.INSTANCE, """
                 void f()
                 {
-                    ApplyFog(color, dist);<caret>
+                    AddHaze(color, dist);<caret>
                 }""");
         enter();
         myFixture.checkResult("""
                 void f()
                 {
-                    ApplyFog(color, dist);
+                    AddHaze(color, dist);
                     <caret>
                 }""");
     }

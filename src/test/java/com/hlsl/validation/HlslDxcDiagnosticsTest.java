@@ -9,7 +9,7 @@ import static org.junit.Assert.*;
 
 public class HlslDxcDiagnosticsTest {
     private final Path temporarySource = Path.of("build", "dxc snapshot", "source.hlsl").toAbsolutePath();
-    private final Path originalSource = Path.of("build", "shader project", "Deferred.hlsl").toAbsolutePath();
+    private final Path originalSource = Path.of("build", "shader project", "Composite.hlsl").toAbsolutePath();
 
     private List<HlslDxcDiagnostics.Diagnostic> parse(String output, int exitCode) {
         return parse(output, exitCode, true);
@@ -23,8 +23,8 @@ public class HlslDxcDiagnosticsTest {
 
     @Test
     public void includeFileDiagnosticsAreDroppedUnlessIncludeValidationIsEnabled() {
-        Path include = originalSource.resolveSibling("LightingUtil.hlsl");
-        String output = include + ":37:5: warning: 'NUM_DIR_LIGHTS' is not defined\n"
+        Path include = originalSource.resolveSibling("Shared.hlsl");
+        String output = include + ":37:5: warning: 'SUN_COUNT' is not defined\n"
                 + temporarySource + ":3:9: error: use of undeclared identifier 'light'";
         assertEquals(2, parse(output, 1).size());
         List<HlslDxcDiagnostics.Diagnostic> withoutIncludes = parse(output, 1, false);
@@ -36,8 +36,8 @@ public class HlslDxcDiagnosticsTest {
     @Test
     public void unviableOverloadNotesExplainTheErrorOnTheEditedFile() {
         // Real compiler output: the call passes an index where a struct value is required.
-        String output = temporarySource + ":127:16: error: no matching function for call to 'ComputePointLight'\n"
-                + originalSource.resolveSibling("LightingUtil.hlsl")
+        String output = temporarySource + ":127:16: error: no matching function for call to 'ShadeLamp'\n"
+                + originalSource.resolveSibling("Shared.hlsl")
                 + ":119:8: note: candidate function not viable: no known conversion from 'uint' to 'Light'"
                 + " for 1st argument";
         List<HlslDxcDiagnostics.Diagnostic> result = parse(output, 1, false);
@@ -66,27 +66,27 @@ public class HlslDxcDiagnosticsTest {
 
     @Test
     public void includeErrorsNeverUseTheCurrentFilesLineNumbers() {
-        Path include = originalSource.resolveSibling("LightingUtil.hlsl");
-        List<HlslDxcDiagnostics.Diagnostic> result = parse(include + ":37:5: error: undeclared identifier 'NUM_DIR_LIGHTS'", 1);
+        Path include = originalSource.resolveSibling("Shared.hlsl");
+        List<HlslDxcDiagnostics.Diagnostic> result = parse(include + ":37:5: error: undeclared identifier 'SUN_COUNT'", 1);
         assertEquals(1, result.size());
         assertEquals(0, result.get(0).line());
         assertEquals(0, result.get(0).column());
-        assertTrue(result.get(0).message().contains("LightingUtil.hlsl:37:5"));
-        assertTrue(result.get(0).message().contains("NUM_DIR_LIGHTS"));
+        assertTrue(result.get(0).message().contains("Shared.hlsl:37:5"));
+        assertTrue(result.get(0).message().contains("SUN_COUNT"));
     }
 
     @Test
     public void relativeIncludePathsAreNotMistakenForSnapshotSource() {
-        List<HlslDxcDiagnostics.Diagnostic> result = parse("LightingUtil.hlsl:9:2: error: bad type", 1);
+        List<HlslDxcDiagnostics.Diagnostic> result = parse("Shared.hlsl:9:2: error: bad type", 1);
         assertEquals(0, result.get(0).line());
-        assertTrue(result.get(0).message().startsWith("LightingUtil.hlsl:9:2:"));
+        assertTrue(result.get(0).message().startsWith("Shared.hlsl:9:2:"));
     }
 
     @Test
     public void recognizesWindowsDriveLetterAndSpacesInPath() {
-        List<HlslDxcDiagnostics.Diagnostic> result = parse("C:\\Shaders With Spaces\\LightingUtil.hlsl:42:6: warning: unused variable", 0);
+        List<HlslDxcDiagnostics.Diagnostic> result = parse("C:\\Shaders With Spaces\\Shared.hlsl:42:6: warning: unused variable", 0);
         assertEquals(1, result.size());
-        assertTrue(result.get(0).message().contains("C:\\Shaders With Spaces\\LightingUtil.hlsl:42:6:"));
+        assertTrue(result.get(0).message().contains("C:\\Shaders With Spaces\\Shared.hlsl:42:6:"));
     }
 
     @Test

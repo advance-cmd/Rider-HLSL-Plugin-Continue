@@ -28,7 +28,7 @@ public final class HlslDxcSettings implements PersistentStateComponent<HlslDxcSe
         public boolean validateIncludeFiles = false;
         public boolean treatWarningsAsErrors = false;
         /**
-         * Macros the build system passes to the compiler, e.g. "NUM_DIR_LIGHTS=1;NUM_SPOT_LIGHTS=1".
+         * Macros the build system passes to the compiler, e.g. "LIGHT_COUNT=4;USE_FOG=1".
          * Without these, shaders that rely on build-provided macros look broken to a standalone compile.
          */
         public String preprocessorDefines = "";

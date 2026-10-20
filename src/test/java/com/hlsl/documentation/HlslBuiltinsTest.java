@@ -72,7 +72,7 @@ public class HlslBuiltinsTest extends BasePlatformTestCase {
 
     /** The reported case: hovering RWTexture2D says what it is. */
     public void testHoveringRWTexture2DExplainsIt() {
-        String text = "RWTexture2D<float4> gOutput : register(u0);\n";
+        String text = "RWTexture2D<float4> gTarget : register(u0);\n";
         myFixture.configureByText(HlslFileType.INSTANCE, text);
         int offset = text.indexOf("RWTexture2D") + 4;
         HlslBuiltinDocumentationProvider provider = new HlslBuiltinDocumentationProvider();
@@ -102,7 +102,7 @@ public class HlslBuiltinsTest extends BasePlatformTestCase {
 
     public void testTheExplanationFollowsTheHintLanguage() {
         HlslDxcSettings.getInstance().setHintLanguage("zh");
-        String text = "RWTexture2D<float4> gOutput : register(u0);\n";
+        String text = "RWTexture2D<float4> gTarget : register(u0);\n";
         myFixture.configureByText(HlslFileType.INSTANCE, text);
         PsiElement element = myFixture.getFile().findElementAt(text.indexOf("RWTexture2D") + 1);
         String doc = new HlslBuiltinDocumentationProvider().generateDoc(element, element);
@@ -133,7 +133,7 @@ public class HlslBuiltinsTest extends BasePlatformTestCase {
     }
 
     public void testCtrlClickOnAResourceTypeGoesToItsClass() {
-        myFixture.configureByText(HlslFileType.INSTANCE, "RWTexture<caret>2D<float4> gOutput : register(u0);\n");
+        myFixture.configureByText(HlslFileType.INSTANCE, "RWTexture<caret>2D<float4> gTarget : register(u0);\n");
         PsiElement target = singleTarget();
         assertEquals("RWTexture2D", target.getText());
         PsiFile file = target.getContainingFile();
@@ -154,7 +154,7 @@ public class HlslBuiltinsTest extends BasePlatformTestCase {
 
     /** The reported case: [numthreads(8,8,1)] had no explanation on hover. */
     public void testHoveringNumthreadsExplainsIt() {
-        String text = "[numthreads(8,8,1)]\nvoid CS_Irradiance(uint3 id: SV_DispatchThreadID){\n}\n";
+        String text = "[numthreads(8,8,1)]\nvoid CS_Main(uint3 id: SV_DispatchThreadID){\n}\n";
         myFixture.configureByText(HlslFileType.INSTANCE, text);
         int offset = text.indexOf("numthreads") + 3;
         HlslBuiltinDocumentationProvider provider = new HlslBuiltinDocumentationProvider();
@@ -194,7 +194,7 @@ public class HlslBuiltinsTest extends BasePlatformTestCase {
 
     public void testCtrlClickOnAnAttributeGoesToItsDeclaration() {
         myFixture.configureByText(HlslFileType.INSTANCE,
-                "[numth<caret>reads(8,8,1)]\nvoid CS_Irradiance(uint3 id: SV_DispatchThreadID){\n}\n");
+                "[numth<caret>reads(8,8,1)]\nvoid CS_Main(uint3 id: SV_DispatchThreadID){\n}\n");
         PsiElement target = singleTarget();
         assertEquals("numthreads", target.getText());
         assertTrue(HlslBuiltins.isBuiltinsFile(target.getContainingFile().getVirtualFile()));

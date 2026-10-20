@@ -11,7 +11,7 @@ public class HlslDxcSpanTest {
     /** The reported case: an undeclared identifier in the middle of an expression. */
     @Test
     public void anUndeclaredIdentifierIsUnderlinedAlone() {
-        String line = "float flip = sign(dot(offset, 空25));            // 和谁同侧才算在表面外面";
+        String line = "float side = sign(dot(normal, 空25));          // 判断在平面的哪一侧";
         int column = columnOf(line, "空25");
         int start = HlslDxcDiagnostics.offsetForByteColumn(line, column);
         HlslDxcDiagnostics.Diagnostic diagnostic = new HlslDxcDiagnostics.Diagnostic(1, column, "error",
@@ -76,7 +76,7 @@ public class HlslDxcSpanTest {
     /** Columns from DXC count UTF-8 bytes, so a name after Chinese text still starts where it should. */
     @Test
     public void byteColumnsMapBackToTheRightCharacter() {
-        String line = "// 注释 float flip = 空25;";
+        String line = "// 注释 float side = 空25;";
         int column = line.substring(0, line.indexOf("空25")).getBytes(java.nio.charset.StandardCharsets.UTF_8).length + 1;
         int start = HlslDxcDiagnostics.offsetForByteColumn(line, column);
         assertEquals(line.indexOf("空25"), start);

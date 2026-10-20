@@ -9,9 +9,9 @@ import static org.junit.Assert.*;
 public class HlslLexerTest {
     @Test
     public void incrementalRestartsPreserveEveryToken() {
-        String source = "struct /* definition */ PassConstants { float4 EyePosW; };\r\n"
-                + "ConstantBuffer<PassConstants> gPass;\r\n"
-                + "gPass. /* member */ EyePosW.xyz; texture.Sample(sampler, uv);\r\n"
+        String source = "struct /* definition */ FrameConstants { float4 CameraPos; };\r\n"
+                + "ConstantBuffer<FrameConstants> gFrame;\r\n"
+                + "gFrame. /* member */ CameraPos.xyz; texture.Sample(sampler, uv);\r\n"
                 + "class Surface {}; interface Lighting {}; enum Mode { Lit };";
         HlslLexer full = new HlslLexer();
         full.start(source);
@@ -26,7 +26,7 @@ public class HlslLexerTest {
 
     @Test
     public void windowsMacroContinuationStaysInPreprocessor() {
-        String directive = "#define READ_PASS(x) \\\r\n    gPass.x";
+        String directive = "#define READ_PASS(x) \\\r\n    gFrame.x";
         HlslLexer lexer = new HlslLexer();
         lexer.start(directive + "\r\nfloat value;");
         assertEquals(HlslTokenTypes.PREPROCESSOR, lexer.getTokenType());

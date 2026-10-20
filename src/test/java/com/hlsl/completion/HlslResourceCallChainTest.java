@@ -7,20 +7,20 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-/** Members of a resource call's result, as in {@code gGBuffer1.Load(int3(pixel, 0)).} */
+/** Members of a resource call's result, as in {@code gNormals.Load(int3(pixel, 0)).} */
 public class HlslResourceCallChainTest {
 
     private static final String SOURCE = """
-            Texture2D<float4> gGBuffer1 : register(t1);
-            Texture2D<float> gDepthMap : register(t2);
-            RWTexture2D<float4> gOutput : register(u0);
+            Texture2D<float4> gNormals : register(t1);
+            Texture2D<float> gDepth : register(t2);
+            RWTexture2D<float4> gTarget : register(u0);
 
             float4 PS(float2 pixel) : SV_Target
             {
-                float4 color = gGBuffer1.Load(int3(pixel * 2, 0));
-                float depth = gDepthMap.Load(int3(pixel, 0));
-                float4 direct = gGBuffer1.Sample(sampler0, pixel);
-                float4 indexed = gGBuffer1[uint2(pixel)];
+                float4 color = gNormals.Load(int3(pixel * 2, 0));
+                float depth = gDepth.Load(int3(pixel, 0));
+                float4 direct = gNormals.Sample(sampler0, pixel);
+                float4 indexed = gNormals[uint2(pixel)];
                 return color;
             }
             """;
@@ -28,7 +28,7 @@ public class HlslResourceCallChainTest {
     /** The reported case: the caret right after the argument list of a Load call. */
     @Test
     public void loadResultOffersSwizzles() {
-        HlslCompletionAnalysis.Result result = analyzeAfter("gGBuffer1.Load(int3(pixel * 2, 0))");
+        HlslCompletionAnalysis.Result result = analyzeAfter("gNormals.Load(int3(pixel * 2, 0))");
         assertEquals(HlslCompletionAnalysis.Context.MEMBER, result.context());
         assertTrue("expected swizzles after Load, got " + names(result),
                 names(result).contains("xyz") && names(result).contains("rgba"));
@@ -37,7 +37,7 @@ public class HlslResourceCallChainTest {
     /** The element type decides the swizzle alphabet: a Texture2D<float> yields a scalar. */
     @Test
     public void loadResultOfAScalarTextureOffersScalarSwizzles() {
-        HlslCompletionAnalysis.Result result = analyzeAfter("gDepthMap.Load(int3(pixel, 0))");
+        HlslCompletionAnalysis.Result result = analyzeAfter("gDepth.Load(int3(pixel, 0))");
         assertEquals(HlslCompletionAnalysis.Context.MEMBER, result.context());
         assertTrue("expected the scalar swizzles after Load, got " + names(result),
                 names(result).contains("xxx") && !names(result).contains("xyz"));
@@ -46,7 +46,7 @@ public class HlslResourceCallChainTest {
     /** A Sample call keeps working. */
     @Test
     public void sampleResultStillOffersSwizzles() {
-        HlslCompletionAnalysis.Result result = analyzeAfter("gGBuffer1.Sample(sampler0, pixel)");
+        HlslCompletionAnalysis.Result result = analyzeAfter("gNormals.Sample(sampler0, pixel)");
         assertEquals(HlslCompletionAnalysis.Context.MEMBER, result.context());
         assertTrue("expected swizzles after Sample, got " + names(result), names(result).contains("xyz"));
     }
@@ -55,8 +55,8 @@ public class HlslResourceCallChainTest {
     @Test
     public void swizzleOfALoadResultOffersSwizzles() {
         // The source already reads the swizzle, so the caret goes right after it.
-        String marked = SOURCE.replace("gGBuffer1.Load(int3(pixel * 2, 0))",
-                "gGBuffer1.Load(int3(pixel * 2, 0)).xyz<caret>");
+        String marked = SOURCE.replace("gNormals.Load(int3(pixel * 2, 0))",
+                "gNormals.Load(int3(pixel * 2, 0)).xyz<caret>");
         int caret = marked.indexOf("<caret>");
         HlslCompletionAnalysis.Result result =
                 HlslCompletionAnalysis.analyze(marked.replace("<caret>", ""), caret, List.of());
@@ -67,7 +67,7 @@ public class HlslResourceCallChainTest {
     /** Indexing a resource yields its element type. */
     @Test
     public void indexingAResourceOffersSwizzles() {
-        HlslCompletionAnalysis.Result result = analyzeAfter("gGBuffer1[uint2(pixel)]");
+        HlslCompletionAnalysis.Result result = analyzeAfter("gNormals[uint2(pixel)]");
         assertEquals(HlslCompletionAnalysis.Context.MEMBER, result.context());
         assertTrue("expected swizzles after an index, got " + names(result), names(result).contains("xyz"));
     }

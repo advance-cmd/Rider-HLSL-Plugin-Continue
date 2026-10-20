@@ -15,11 +15,11 @@ import org.jetbrains.annotations.NotNull;
  * Enter typed inside an empty block, with the caret between the braces:
  *
  * <pre>
- * float OcclusionFunction(float dist) {|}
+ * float Falloff(float dist) {|}
  *
  * becomes
  *
- * float OcclusionFunction(float dist) {
+ * float Falloff(float dist) {
  *     |
  * }
  * </pre>

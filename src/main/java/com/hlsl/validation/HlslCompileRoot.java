@@ -25,10 +25,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * Finds the shader a file is compiled as part of.
  *
- * <p>A helper such as Shadow.hlsl is written to be included after the declarations it uses: LightingUtil.hlsl
- * declares PassConstants and then includes it. Compiled on its own it reports those declarations as undefined,
- * but the build never compiles it on its own; it compiles Triangle.hlsl, which includes LightingUtil.hlsl,
- * which includes Shadow.hlsl. That chain is found by reading the includes of the shaders around the file.</p>
+ * <p>A helper is often written to be included after the declarations it uses: a shared header declares a
+ * constant buffer struct and then includes the helper that takes it as a parameter. Compiled on its own the
+ * helper reports those declarations as undefined, but the build never compiles it on its own; it compiles a
+ * shader that includes the header, which includes the helper. That chain is found by reading the includes of
+ * the shaders around the file.</p>
  *
  * <p>The shaders that include a helper sit in its directory or below the directory above it, so that is what is
  * scanned. The scan is bounded and cached for a short while, because it runs for every validation; the includes

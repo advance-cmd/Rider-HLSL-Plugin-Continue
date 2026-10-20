@@ -15,16 +15,16 @@ public class HlslShaderMacrosTest {
     private static final String MAIN_CPP = """
             const std::string extraLights = std::to_string(mManyLights ? kExtraLights : 0);
             const D3D_SHADER_MACRO lightDefines[] = {
-                {"NUM_DIR_LIGHTS", "1"},
-                {"NUM_POINT_LIGHTS", "1"},
-                {"NUM_SPOT_LIGHTS", "1"},
-                {"NUM_EXTRA_LIGHTS", extraLights.c_str()},
+                {"SUN_COUNT", "1"},
+                {"LAMP_COUNT", "1"},
+                {"SPOT_COUNT", "1"},
+                {"EXTRA_COUNT", extraLights.c_str()},
                 {"FOG", "1"},
                 {nullptr, nullptr}
             };
             const D3D_SHADER_MACRO alphaTestDefines[] = {
-                {"NUM_DIR_LIGHTS", "1"},
-                {"ALPHA_TEST", "1"},
+                {"SUN_COUNT", "1"},
+                {"USE_CUTOUT", "1"},
                 {nullptr, nullptr}
             };
             // An unrelated table with the same brace shape must not be read as shader macros.
@@ -35,11 +35,11 @@ public class HlslShaderMacrosTest {
     public void readsLiteralMacrosFromShaderMacroTablesOnly() {
         Map<String, Set<String>> values = new LinkedHashMap<>();
         HlslShaderMacros.collect(MAIN_CPP, values);
-        assertEquals(Set.of("1"), values.get("NUM_DIR_LIGHTS"));
-        assertEquals(Set.of("1"), values.get("NUM_SPOT_LIGHTS"));
-        assertEquals(Set.of("1"), values.get("ALPHA_TEST"));
+        assertEquals(Set.of("1"), values.get("SUN_COUNT"));
+        assertEquals(Set.of("1"), values.get("SPOT_COUNT"));
+        assertEquals(Set.of("1"), values.get("USE_CUTOUT"));
         assertNull("an unrelated initializer list is not a macro table", values.get("Apple"));
-        assertNull("a runtime value cannot become a -D argument", values.get("NUM_EXTRA_LIGHTS"));
+        assertNull("a runtime value cannot become a -D argument", values.get("EXTRA_COUNT"));
         assertNull("the nullptr terminator is not a macro", values.get("nullptr"));
     }
 
@@ -47,23 +47,23 @@ public class HlslShaderMacrosTest {
     public void conflictingValuesAreNotResolvedByGuessing() {
         Map<String, Set<String>> values = new LinkedHashMap<>();
         HlslShaderMacros.collect("""
-                const D3D_SHADER_MACRO a[] = {{"NUM_EXTRA_LIGHTS", "0"}, {nullptr, nullptr}};
-                const D3D_SHADER_MACRO b[] = {{"NUM_EXTRA_LIGHTS", "64"}, {nullptr, nullptr}};
+                const D3D_SHADER_MACRO a[] = {{"EXTRA_COUNT", "0"}, {nullptr, nullptr}};
+                const D3D_SHADER_MACRO b[] = {{"EXTRA_COUNT", "64"}, {nullptr, nullptr}};
                 const D3D_SHADER_MACRO c[] = {{"STABLE", "1"}, {nullptr, nullptr}};
                 """, values);
         Map<String, String> resolved = HlslShaderMacros.unambiguous(values);
-        assertFalse("a macro that differs per pass is not usable", resolved.containsKey("NUM_EXTRA_LIGHTS"));
+        assertFalse("a macro that differs per pass is not usable", resolved.containsKey("EXTRA_COUNT"));
         assertEquals("1", resolved.get("STABLE"));
     }
 
     @Test
     public void onlyMacrosTheShaderMentionsBecomeArguments() {
         Map<String, String> macros = new LinkedHashMap<>();
-        macros.put("NUM_DIR_LIGHTS", "1");
-        macros.put("ALPHA_TEST", "1");
+        macros.put("SUN_COUNT", "1");
+        macros.put("USE_CUTOUT", "1");
         List<String> definitions = HlslShaderMacros.definitionsFor(macros,
-                "static const uint kFirstExtraLight = NUM_DIR_LIGHTS + NUM_POINT_LIGHTS;\n");
-        assertEquals(List.of("NUM_DIR_LIGHTS=1"), definitions);
+                "static const uint kFirstExtra = SUN_COUNT + LAMP_COUNT;\n");
+        assertEquals(List.of("SUN_COUNT=1"), definitions);
     }
 
     @Test
@@ -76,7 +76,7 @@ public class HlslShaderMacrosTest {
 
     @Test
     public void definitionsExposeTheirName() {
-        assertEquals("NUM_DIR_LIGHTS", HlslShaderMacros.nameOf("NUM_DIR_LIGHTS=1"));
+        assertEquals("SUN_COUNT", HlslShaderMacros.nameOf("SUN_COUNT=1"));
         assertEquals("BARE", HlslShaderMacros.nameOf("BARE"));
     }
 }

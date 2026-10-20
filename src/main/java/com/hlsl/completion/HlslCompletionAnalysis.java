@@ -85,7 +85,7 @@ public final class HlslCompletionAnalysis {
     private static final Pattern DIRECTIVE = Pattern.compile("^#\\s*(define|undef)\\s+([A-Za-z_][A-Za-z0-9_]*)");
     /**
      * Keywords of the effect framework, which a shader is otherwise free to use as names: the pass of
-     * {@code float ViewZ(PassConstants pass, float3 posW)} is an ordinary parameter.
+     * {@code float Depth(FrameConstants pass, float3 worldPos)} is an ordinary parameter.
      */
     private static final Set<String> EFFECT_KEYWORDS = Set.of("pass", "technique", "technique10", "technique11");
 
@@ -747,7 +747,7 @@ public final class HlslCompletionAnalysis {
             if (i < 0 || i >= tokens.size()) return false;
             IElementType type = tokens.get(i).type;
             // A type keyword can name a call as well: `float3(...)`, `int2(...)` and `uint2(...)` are
-            // constructors, and an expression such as gGBuffer1[uint2(pixel)] is built out of one.
+            // constructors, and an expression such as gNormals[uint2(pixel)] is built out of one.
             return type == HlslTokenTypes.IDENTIFIER || type == HlslTokenTypes.STRUCT_NAME
                     || type == HlslTokenTypes.FUNCTION_CALL || type == HlslTokenTypes.FIELD_ACCESS
                     || type == HlslTokenTypes.SEMANTIC || type == HlslTokenTypes.BUILTIN_FUNCTION
@@ -822,7 +822,7 @@ public final class HlslCompletionAnalysis {
 
         /**
          * True when the caret sits where a newly declared name belongs, as in {@code int2 |pixel} or
-         * {@code out MaterialConstants |mat}. The run of tokens before the caret must read as
+         * {@code out SurfaceConstants |surface}. The run of tokens before the caret must read as
          * "type, optionally one name" and nothing else, otherwise the position is an ordinary expression.
          */
         boolean isDeclaratorPosition(int prefixStart, Map<String, Candidate> visible,
@@ -875,7 +875,7 @@ public final class HlslCompletionAnalysis {
         /**
          * The type a built-in name produces when it is called. {@code float3(...)} and {@code int2(...)} are
          * constructors that yield their own type, and a resource method such as {@code Load} or {@code Sample}
-         * yields the element type of the resource it is called on, so {@code gGBuffer1.Load(...).} can offer
+         * yields the element type of the resource it is called on, so {@code gNormals.Load(...).} can offer
          * swizzles even though no declaration of {@code Load} exists anywhere.
          */
         String builtinResultType(String name, String receiverType,

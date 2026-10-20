@@ -66,7 +66,7 @@ public class HlslSemanticsTest extends BasePlatformTestCase {
 
     /** register is the other thing the user asked for: it is not a semantic but it sits after a colon. */
     public void testRegisterIsExplained() {
-        String text = "cbuffer Pass : register(b0)\n{\n    float4x4 ViewProj;\n};\n";
+        String text = "cbuffer Pass : register(b0)\n{\n    float4x4 WorldToClip;\n};\n";
         myFixture.configureByText(HlslFileType.INSTANCE, text);
         PsiElement element = myFixture.getFile().findElementAt(text.indexOf("register") + 2);
         assertNotNull(element);
@@ -114,11 +114,11 @@ public class HlslSemanticsTest extends BasePlatformTestCase {
 
     /** A struct field name is not a semantic: the declaration provider keeps answering those. */
     public void testAPlainIdentifierIsNotClaimed() {
-        String text = "float3 c = ApplyFog(color);\n";
+        String text = "float3 c = AddHaze(color);\n";
         myFixture.configureByText(HlslFileType.INSTANCE, text);
         PsiElement claimed = new HlslSemanticsDocumentationProvider()
                 .getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), null,
-                        text.indexOf("ApplyFog") + 2);
+                        text.indexOf("AddHaze") + 2);
         assertNull("a call is not a semantic", claimed);
     }
 

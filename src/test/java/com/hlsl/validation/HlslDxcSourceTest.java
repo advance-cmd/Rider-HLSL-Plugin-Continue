@@ -42,12 +42,12 @@ public class HlslDxcSourceTest {
 
     @Test
     public void aRootPragmaNamesTheShaderAndIsHiddenFromTheCompiler() {
-        String text = "// #pragma hlsl root Triangle.hlsl\nfloat ViewZ(PassConstants pass, float3 posW) { return 0; }";
+        String text = "// #pragma hlsl root Main.hlsl\nfloat DepthOf(FrameConstants pass, float3 worldPos) { return 0; }";
         HlslDxcSource source = new HlslDxcSource(text);
-        assertEquals("Triangle.hlsl", source.option("root", null));
+        assertEquals("Main.hlsl", source.option("root", null));
         assertFalse(source.compilerText().contains("#pragma hlsl"));
         assertTrue("naming a root asks for the include file to be validated",
-                new HlslDxcSource("// #pragma hlsl root Triangle.hlsl").shouldValidate("Shadow.hlsli", false));
+                new HlslDxcSource("// #pragma hlsl root Main.hlsl").shouldValidate("Helper.hlsli", false));
     }
 
     @Test
@@ -56,7 +56,7 @@ public class HlslDxcSourceTest {
         assertFalse(source.shouldValidate("Lighting.HLSLI", false));
         assertFalse(source.shouldValidate("Lighting.fxh", false));
         assertFalse(source.shouldValidate("Lighting.ush", false));
-        assertTrue(source.shouldValidate("Deferred.hlsl", false));
+        assertTrue(source.shouldValidate("Composite.hlsl", false));
         assertTrue(source.shouldValidate("Lighting.hlsli", true));
         assertTrue(new HlslDxcSource("// #pragma hlsl profile lib_6_6").shouldValidate("Lighting.hlsli", false));
         assertFalse(new HlslDxcSource("// #pragma hlsl hv 2018").shouldValidate("Lighting.hlsli", false));

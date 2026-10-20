@@ -63,8 +63,8 @@ public class HlslStructNameAnnotator implements Annotator {
             String text = file.getText();
             Set<String> names = new HashSet<>();
             collectFromText(text, names);
-            // The sources completion reads as well: what the file includes and, for a helper such as Shadow.hlsl,
-            // what the shaders including it declare above their #include of it.
+            // The sources completion reads as well: what the file includes and, for a helper that other shaders
+            // include, what those shaders declare above their #include of it.
             VirtualFile vf = file.getVirtualFile();
             HlslIncludeIndex index = file.getProject().getService(HlslIncludeIndex.class);
             if (vf != null && index != null) {

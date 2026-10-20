@@ -21,25 +21,25 @@ import static org.junit.Assert.*;
  */
 public class HlslDxcRootCompileTest {
 
-    private static final String LIGHTING_UTIL = """
-            struct PassConstants
+    private static final String SHARED = """
+            struct FrameConstants
             {
-                float4x4 ViewProj;
+                float4x4 WorldToClip;
             };
-            #include "Shadow.hlsl"
+            #include "Helper.hlsl"
             """;
-    private static final String SHADOW = """
-            float ViewZ(PassConstants pass, float3 posW)
+    private static final String HELPER = """
+            float DepthOf(FrameConstants pass, float3 worldPos)
             {
-                return mul(float4(posW,1),pass.ViewProj).w;
+                return mul(float4(worldPos,1),pass.WorldToClip).w;
             }
             """;
-    private static final String TRIANGLE = """
-            #include "LightingUtil.hlsl"
-            ConstantBuffer<PassConstants> gPass : register(b1);
-            float4 main(float4 posW : POSITION) : SV_Target
+    private static final String MAIN = """
+            #include "Shared.hlsl"
+            ConstantBuffer<FrameConstants> gFrame : register(b1);
+            float4 main(float4 worldPos : POSITION) : SV_Target
             {
-                return ViewZ(gPass, posW.xyz);
+                return DepthOf(gFrame, worldPos.xyz);
             }
             """;
 
@@ -57,52 +57,52 @@ public class HlslDxcRootCompileTest {
         settings.dxcPath = dxc;
         settings.autoDetectBuildMacros = false;
         shaders = folder.newFolder("HLSL").toPath();
-        write("LightingUtil.hlsl", LIGHTING_UTIL);
-        write("Shadow.hlsl", SHADOW);
-        write("Triangle.hlsl", TRIANGLE);
+        write("Shared.hlsl", SHARED);
+        write("Helper.hlsl", HELPER);
+        write("Main.hlsl", MAIN);
     }
 
-    /** What the reported problem looked like: compiled on its own, the helper has never seen PassConstants. */
+    /** What the reported problem looked like: compiled on its own, the helper has never seen FrameConstants. */
     @Test
     public void onItsOwnTheHelperReportsTheTypeItsIncluderDeclares() {
         HlslDxcAnnotator.ValidationResult result = new HlslDxcAnnotator().doAnnotate(
-                new HlslDxcAnnotator.CollectedInfo(SHADOW, path("Shadow.hlsl"), 1, settings));
+                new HlslDxcAnnotator.CollectedInfo(HELPER, path("Helper.hlsl"), 1, settings));
         assertTrue("expected the standalone error, got " + result.diagnostics(), result.diagnostics().stream()
-                .anyMatch(d -> d.message().contains("unknown type name 'PassConstants'")));
+                .anyMatch(d -> d.message().contains("unknown type name 'FrameConstants'")));
     }
 
     @Test
     public void throughItsRootTheHelperCompilesCleanly() {
-        HlslDxcAnnotator.ValidationResult result = new HlslDxcAnnotator().doAnnotate(throughTriangle(SHADOW));
+        HlslDxcAnnotator.ValidationResult result = new HlslDxcAnnotator().doAnnotate(throughMain(HELPER));
         assertEquals("no diagnostics expected, got " + result.diagnostics(), List.of(), result.diagnostics());
     }
 
     /** An unsaved edit of the helper is what gets compiled, and its error lands on the helper's own line. */
     @Test
     public void anUnsavedMistakeInTheHelperIsReportedOnItsLine() {
-        String edited = SHADOW.replace("return mul(", "float broken = undefinedThing;\n    return mul(");
-        HlslDxcAnnotator.ValidationResult result = new HlslDxcAnnotator().doAnnotate(throughTriangle(edited));
+        String edited = HELPER.replace("return mul(", "float broken = undefinedThing;\n    return mul(");
+        HlslDxcAnnotator.ValidationResult result = new HlslDxcAnnotator().doAnnotate(throughMain(edited));
         HlslDxcDiagnostics.Diagnostic error = result.diagnostics().stream()
                 .filter(d -> d.message().contains("undefinedThing")).findFirst().orElse(null);
         assertNotNull("the unsaved mistake is not reported: " + result.diagnostics(), error);
         assertEquals(3, error.line());
-        assertTrue(error.message(), error.message().endsWith("(compiled through Triangle.hlsl)"));
+        assertTrue(error.message(), error.message().endsWith("(compiled through Main.hlsl)"));
     }
 
     /** A mistake in the root belongs to the root, which reports it when it is opened itself. */
     @Test
     public void aMistakeInTheRootIsNotReportedOnTheHelper() {
-        write("Triangle.hlsl", TRIANGLE.replace("return ViewZ(", "return CalcShadowFactor() + ViewZ("));
-        HlslDxcAnnotator.ValidationResult result = new HlslDxcAnnotator().doAnnotate(throughTriangle(SHADOW));
+        write("Main.hlsl", MAIN.replace("return DepthOf(", "return SampleHelper() + DepthOf("));
+        HlslDxcAnnotator.ValidationResult result = new HlslDxcAnnotator().doAnnotate(throughMain(HELPER));
         assertEquals("the root's error must stay on the root, got " + result.diagnostics(), List.of(), result.diagnostics());
     }
 
-    private HlslDxcAnnotator.CollectedInfo throughTriangle(String shadowText) {
+    private HlslDxcAnnotator.CollectedInfo throughMain(String helperText) {
         List<HlslDxcAnnotator.ContextFile> context = List.of(
-                new HlslDxcAnnotator.ContextFile(path("Triangle.hlsl"), "Triangle.hlsl", read("Triangle.hlsl")),
-                new HlslDxcAnnotator.ContextFile(path("LightingUtil.hlsl"), "LightingUtil.hlsl", LIGHTING_UTIL),
-                new HlslDxcAnnotator.ContextFile(path("Shadow.hlsl"), "Shadow.hlsl", shadowText));
-        return new HlslDxcAnnotator.CollectedInfo(shadowText, path("Shadow.hlsl"), 1, settings, List.of(), context, null);
+                new HlslDxcAnnotator.ContextFile(path("Main.hlsl"), "Main.hlsl", read("Main.hlsl")),
+                new HlslDxcAnnotator.ContextFile(path("Shared.hlsl"), "Shared.hlsl", SHARED),
+                new HlslDxcAnnotator.ContextFile(path("Helper.hlsl"), "Helper.hlsl", helperText));
+        return new HlslDxcAnnotator.CollectedInfo(helperText, path("Helper.hlsl"), 1, settings, List.of(), context, null);
     }
 
     private String path(String name) {

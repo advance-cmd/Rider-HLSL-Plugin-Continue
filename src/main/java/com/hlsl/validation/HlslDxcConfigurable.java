@@ -99,7 +99,7 @@ public class HlslDxcConfigurable implements Configurable {
                 .addLabeledComponent("Default entry point:", defaultEntryPointField)
                 .addLabeledComponent("HLSL version (-HV):", hlslVersionField)
                 .addLabeledComponent("Preprocessor defines (-D):", preprocessorDefinesField)
-                .addComponentToRightColumn(new JLabel("<html><small>Extra macros for this project, e.g. <code>NUM_DIR_LIGHTS=1;NUM_SPOT_LIGHTS=1</code>. These override detected ones.</small></html>"))
+                .addComponentToRightColumn(new JLabel("<html><small>Extra macros for this project, e.g. <code>LIGHT_COUNT=4;USE_FOG=1</code>. These override detected ones.</small></html>"))
                 .addComponent(autoDetectBuildMacrosCheckBox)
                 .addComponentToRightColumn(new JLabel("<html><small>" + detectedMacrosHint() + "</small></html>"))
                 .addLabeledComponent("Additional DXC arguments:", additionalArgsField)

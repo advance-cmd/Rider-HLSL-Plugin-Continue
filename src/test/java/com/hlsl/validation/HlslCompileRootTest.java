@@ -18,41 +18,41 @@ public class HlslCompileRootTest extends BasePlatformTestCase {
         roots.invalidate();
     }
 
-    /** The reported case: Shadow.hlsl is included by LightingUtil.hlsl, which every pass shader includes. */
+    /** The reported case: Helper.hlsl is included by Shared.hlsl, which every pass shader includes. */
     public void testAHelperIsCompiledThroughTheShaderThatIncludesItsIncluder() {
-        VirtualFile shadow = addReportedLayout();
-        HlslCompileRoot.Chain chain = roots.find(shadow, null);
-        assertNotNull("Shadow.hlsl has includers", chain);
+        VirtualFile helper = addReportedLayout();
+        HlslCompileRoot.Chain chain = roots.find(helper, null);
+        assertNotNull("Helper.hlsl has includers", chain);
         // Both roots are two includes away, so the first by path is taken, every time.
-        assertEquals(List.of("Color.hlsl", "LightingUtil.hlsl", "Shadow.hlsl"), names(chain));
+        assertEquals(List.of("Alt.hlsl", "Shared.hlsl", "Helper.hlsl"), names(chain));
     }
 
     public void testAPragmaPicksTheRoot() {
-        VirtualFile shadow = addReportedLayout();
-        assertEquals(List.of("Triangle.hlsl", "LightingUtil.hlsl", "Shadow.hlsl"), names(roots.find(shadow, "Triangle.hlsl")));
+        VirtualFile helper = addReportedLayout();
+        assertEquals(List.of("Main.hlsl", "Shared.hlsl", "Helper.hlsl"), names(roots.find(helper, "Main.hlsl")));
         assertEquals("the name is matched without regard to case",
-                "Triangle.hlsl", roots.find(shadow, "triangle.HLSL").root().getName());
+                "Main.hlsl", roots.find(helper, "main.HLSL").root().getName());
         assertEquals("an unknown name falls back to the usual choice",
-                "Color.hlsl", roots.find(shadow, "Missing.hlsl").root().getName());
+                "Alt.hlsl", roots.find(helper, "Missing.hlsl").root().getName());
     }
 
     public void testAShaderNothingIncludesIsCompiledOnItsOwn() {
         addReportedLayout();
-        VirtualFile triangle = myFixture.findFileInTempDir("HLSL/Triangle.hlsl");
-        assertNull(roots.find(triangle, null));
+        VirtualFile main = myFixture.findFileInTempDir("HLSL/Main.hlsl");
+        assertNull(roots.find(main, null));
     }
 
     public void testTheRootClosestToTheFileWins() {
-        VirtualFile shadow = addReportedLayout();
-        myFixture.addFileToProject("HLSL/ShadowDebug.hlsl", "#include \"Shadow.hlsl\"\n");
-        assertEquals(List.of("ShadowDebug.hlsl", "Shadow.hlsl"), names(roots.find(shadow, null)));
+        VirtualFile helper = addReportedLayout();
+        myFixture.addFileToProject("HLSL/HelperDebug.hlsl", "#include \"Helper.hlsl\"\n");
+        assertEquals(List.of("HelperDebug.hlsl", "Helper.hlsl"), names(roots.find(helper, null)));
     }
 
     /** A shader in the directory above includes the helper by its subdirectory. */
     public void testAnIncluderInTheDirectoryAboveIsFound() {
-        PsiFile common = myFixture.addFileToProject("Shaders/Common/Fog.hlsli", "float3 ApplyFog(float3 c) { return c; }\n");
-        myFixture.addFileToProject("Shaders/Sky.hlsl", "#include \"Common/Fog.hlsli\"\n");
-        assertEquals(List.of("Sky.hlsl", "Fog.hlsli"), names(roots.find(common.getVirtualFile(), null)));
+        PsiFile common = myFixture.addFileToProject("Shaders/Common/Fog.hlsli", "float3 AddHaze(float3 c) { return c; }\n");
+        myFixture.addFileToProject("Shaders/Scene.hlsl", "#include \"Common/Fog.hlsli\"\n");
+        assertEquals(List.of("Scene.hlsl", "Fog.hlsli"), names(roots.find(common.getVirtualFile(), null)));
     }
 
     public void testAnIncludeCycleHasNoRoot() {
@@ -62,13 +62,13 @@ public class HlslCompileRootTest extends BasePlatformTestCase {
     }
 
     private VirtualFile addReportedLayout() {
-        myFixture.addFileToProject("HLSL/LightingUtil.hlsl",
-                "struct PassConstants { float4x4 ViewProj; };\n#include \"Shadow.hlsl\"\n");
-        PsiFile shadow = myFixture.addFileToProject("HLSL/Shadow.hlsl",
-                "float ViewZ(PassConstants pass, float3 posW)\n{\n    return mul(float4(posW,1),pass.ViewProj).w;\n}\n");
-        myFixture.addFileToProject("HLSL/Triangle.hlsl", "#include \"LightingUtil.hlsl\"\n");
-        myFixture.addFileToProject("HLSL/Color.hlsl", "#include \"LightingUtil.hlsl\"\n");
-        return shadow.getVirtualFile();
+        myFixture.addFileToProject("HLSL/Shared.hlsl",
+                "struct FrameConstants { float4x4 WorldToClip; };\n#include \"Helper.hlsl\"\n");
+        PsiFile helper = myFixture.addFileToProject("HLSL/Helper.hlsl",
+                "float DepthOf(FrameConstants pass, float3 worldPos)\n{\n    return mul(float4(worldPos,1),pass.WorldToClip).w;\n}\n");
+        myFixture.addFileToProject("HLSL/Main.hlsl", "#include \"Shared.hlsl\"\n");
+        myFixture.addFileToProject("HLSL/Alt.hlsl", "#include \"Shared.hlsl\"\n");
+        return helper.getVirtualFile();
     }
 
     private static List<String> names(HlslCompileRoot.Chain chain) {

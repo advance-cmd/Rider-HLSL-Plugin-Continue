@@ -11,7 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The path of an {@code #include}, so that Ctrl+Click on {@code "LightingUtil.hlsl"} opens that file. It is
+ * The path of an {@code #include}, so that Ctrl+Click on {@code "Common.hlsl"} opens that file. It is
  * resolved the way the include index resolves it, so navigation reaches the same file completion reads.
  *
  * <p>The range covers the path with its quotes or angle brackets, which is what Ctrl+hover underlines.</p>
