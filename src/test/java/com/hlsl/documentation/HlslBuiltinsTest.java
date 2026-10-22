@@ -1,7 +1,9 @@
 package com.hlsl.documentation;
 
 import com.hlsl.HlslFileType;
+import com.hlsl.completion.HlslCompletionAnalysis;
 import com.hlsl.lexer.HlslLexer;
+import com.hlsl.parameterinfo.HlslParameterInfoHandler;
 import com.hlsl.validation.HlslDxcAnnotator;
 import com.hlsl.validation.HlslDxcSettings;
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationAction;
@@ -11,6 +13,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
+import com.intellij.testFramework.utils.parameterInfo.MockCreateParameterInfoContext;
 
 import java.util.regex.Pattern;
 
@@ -198,6 +201,22 @@ public class HlslBuiltinsTest extends BasePlatformTestCase {
         PsiElement target = singleTarget();
         assertEquals("numthreads", target.getText());
         assertTrue(HlslBuiltins.isBuiltinsFile(target.getContainingFile().getVirtualFile()));
+    }
+
+    /** The reported case, through the handler the editor asks: GetDimensions showed nothing in its parentheses. */
+    public void testParameterInfoListsTheFormsOfGetDimensions() {
+        myFixture.configureByText(HlslFileType.INSTANCE,
+                "RWTexture2D<float4> gTarget : register(u0);\n[numthreads(8, 8, 1)]\n"
+                        + "void CS_Main(uint3 id : SV_DispatchThreadID)\n{\n    uint w, h;\n"
+                        + "    gTarget.GetDimensions(<caret>);\n}\n");
+        MockCreateParameterInfoContext context =
+                new MockCreateParameterInfoContext(myFixture.getEditor(), myFixture.getFile());
+        assertNotNull("the call to GetDimensions has parameter info",
+                new HlslParameterInfoHandler().findElementForParameterInfo(context));
+        Object[] items = context.getItemsToShow();
+        assertEquals(1, items.length);
+        assertEquals("GetDimensions(out uint width, out uint height)",
+                ((HlslCompletionAnalysis.Signature) items[0]).label());
     }
 
     public void testTheBuiltinsFileIsReadOnlyAndNeverCompiled() {

@@ -56,6 +56,13 @@ public final class HlslBuiltins {
             Pattern.compile("(?m)^(?:class|struct)\\s+([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern FUNCTION_NAME = Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
     private static final Pattern ATTRIBUTE_DECLARATION = Pattern.compile("^\\[([A-Za-z_][A-Za-z0-9_]*)");
+    /** One form of a function or a method: {@code void GetDimensions(out uint width, out uint height);}. */
+    private static final Pattern FORM = Pattern.compile(
+            "^(?:template\\s*<[^>]*>\\s*)?(\\S.*?)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(([^)]*)\\)\\s*;$");
+    /** The element type a class template falls back to, as the float4 of {@code template<typename T = float4>}. */
+    private static final Pattern ELEMENT_DEFAULT = Pattern.compile("^template\\s*<\\s*typename\\s+T\\s*=\\s*(\\w+)");
+    private static final Pattern ELEMENT_PARAMETER = Pattern.compile("^template\\s*<\\s*typename\\s+T\\b");
+    private static final Pattern ELEMENT = Pattern.compile("\\bT\\b");
 
     /** A blank-line separated block of the template: one type, or every form of one function or attribute. */
     private record Group(String name, Kind kind, String declaration, int nameOffset) { }
@@ -63,6 +70,7 @@ public final class HlslBuiltins {
     private record Stub(LightVirtualFile file, Map<String, Entry> entries) { }
 
     private static final List<Group> GROUPS = readTemplate();
+    private static final Map<String, Group> GROUPS_BY_NAME = byName(GROUPS);
     private static final Map<String, Stub> STUBS = new ConcurrentHashMap<>();
 
     private HlslBuiltins() {
@@ -127,6 +135,80 @@ public final class HlslBuiltins {
     /** True for the generated file, which is not a shader and must not be compiled. */
     public static boolean isBuiltinsFile(@Nullable VirtualFile file) {
         return file != null && Boolean.TRUE.equals(file.getUserData(BUILTINS_FILE));
+    }
+
+    /**
+     * Every form of the intrinsic function {@code name}, as {@code lerp(T x, T y, T s)}, for parameter info.
+     * Empty for a name that is not an intrinsic function.
+     */
+    public static @NotNull List<HlslCompletionAnalysis.Signature> functionSignatures(@NotNull String name) {
+        Group group = GROUPS_BY_NAME.get(name);
+        if (group == null || group.kind() != Kind.FUNCTION) return List.of();
+        return signatures(group.declaration(), name, null);
+    }
+
+    /**
+     * Every form of the method {@code name} of the built-in type {@code receiverType}, as the two forms of
+     * {@code GetDimensions} a {@code Texture2D} has. The element type of the receiver takes the place of the
+     * template's T, so the Append of an {@code AppendStructuredBuffer<Particle>} takes a Particle. Empty when
+     * the receiver is not a built-in type or has no such method.
+     */
+    public static @NotNull List<HlslCompletionAnalysis.Signature> methodSignatures(@NotNull String receiverType,
+                                                                          @NotNull String name) {
+        int generic = receiverType.indexOf('<');
+        String base = generic < 0 ? receiverType : receiverType.substring(0, generic);
+        Group group = GROUPS_BY_NAME.get(base);
+        if (group == null || group.kind() != Kind.TYPE) return List.of();
+        String declaration = group.declaration();
+        String element = null;
+        if (ELEMENT_PARAMETER.matcher(declaration).find()) {
+            element = generic < 0 ? null : firstTypeArgument(receiverType.substring(generic + 1));
+            Matcher fallback = ELEMENT_DEFAULT.matcher(declaration);
+            if (element == null && fallback.find()) element = fallback.group(1);
+        }
+        int body = declaration.indexOf('{');
+        return body < 0 ? List.of() : signatures(declaration.substring(body + 1), name, element);
+    }
+
+    /** The forms named {@code name} among the declarations, one per line, with T replaced by the element type. */
+    private static List<HlslCompletionAnalysis.Signature> signatures(String declarations, String name,
+                                                                     @Nullable String element) {
+        List<HlslCompletionAnalysis.Signature> signatures = new ArrayList<>();
+        for (String line : declarations.split("\n")) {
+            Matcher form = FORM.matcher(line.strip());
+            if (!form.matches() || !form.group(2).equals(name)) continue;
+            List<HlslCompletionAnalysis.Parameter> parameters = new ArrayList<>();
+            for (String parameter : form.group(3).split(",")) {
+                String[] words = parameter.strip().split("\\s+");
+                if (words.length < 2) continue;
+                // The qualifier stays with the type, because the out of GetDimensions is what tells its
+                // arguments are written rather than read.
+                String type = String.join(" ", List.of(words).subList(0, words.length - 1));
+                if (element != null) type = ELEMENT.matcher(type).replaceAll(Matcher.quoteReplacement(element));
+                parameters.add(new HlslCompletionAnalysis.Parameter(type, words[words.length - 1]));
+            }
+            String returns = form.group(1);
+            if (element != null) returns = ELEMENT.matcher(returns).replaceAll(Matcher.quoteReplacement(element));
+            signatures.add(new HlslCompletionAnalysis.Signature(name, returns, List.copyOf(parameters)));
+        }
+        return List.copyOf(signatures);
+    }
+
+    /** {@code float4, 4>} gives float4: the first argument of a type whose list starts the text. */
+    private static @Nullable String firstTypeArgument(String arguments) {
+        int depth = 0;
+        for (int i = 0; i < arguments.length(); i++) {
+            char c = arguments.charAt(i);
+            if (c == '<') {
+                depth++;
+            } else if (c == '>' && depth > 0) {
+                depth--;
+            } else if (c == '>' || c == ',' && depth == 0) {
+                String first = arguments.substring(0, i).strip();
+                return first.isEmpty() ? null : first;
+            }
+        }
+        return null;
     }
 
     /** The documentation popup: the declaration, what kind of built-in it is, and what it does. */
@@ -200,6 +282,12 @@ public final class HlslBuiltins {
 
     private static void appendComment(StringBuilder text, String comment) {
         for (String line : comment.split("\n")) text.append("// ").append(line.strip()).append('\n');
+    }
+
+    private static Map<String, Group> byName(List<Group> groups) {
+        Map<String, Group> byName = new LinkedHashMap<>();
+        for (Group group : groups) byName.putIfAbsent(group.name(), group);
+        return Map.copyOf(byName);
     }
 
     private static List<Group> readTemplate() {

@@ -1,5 +1,6 @@
 package com.hlsl.completion;
 
+import com.hlsl.documentation.HlslBuiltins;
 import com.hlsl.lexer.HlslLexer;
 import com.hlsl.psi.HlslTokenTypes;
 import com.intellij.openapi.progress.ProgressManager;
@@ -130,22 +131,10 @@ public final class HlslCompletionAnalysis {
 
     static Result analyze(CharSequence source, int offset, List<CharSequence> includes) {
         if (isSuppressed(source, offset)) return new Result(Context.SUPPRESSED, List.of());
-        Map<String, Candidate> visible = new LinkedHashMap<>();
-        Map<String, Map<String, Candidate>> structures = new LinkedHashMap<>();
-        for (CharSequence include : includes) {
-            Parser imported = new Parser(include, true);
-            structures.putAll(imported.structures);
-            for (Symbol symbol : imported.symbols) {
-                if (symbol.exported && (symbol.candidate.kind != Kind.MACRO || symbol.end > include.length())) {
-                    visible.put(symbol.candidate.name, symbol.candidate);
-                }
-            }
-        }
         Parser parser = new Parser(source, false, offset);
-        structures.putAll(parser.structures);
-        for (Symbol symbol : parser.symbols) {
-            if (symbol.start <= offset && offset < symbol.end) visible.put(symbol.candidate.name, symbol.candidate);
-        }
+        Visible scope = visibleAt(parser, offset, includes);
+        Map<String, Candidate> visible = scope.symbols();
+        Map<String, Map<String, Candidate>> structures = scope.structures();
         int prefixStart = Math.min(offset, source.length());
         while (prefixStart > 0 && isIdentifierPart(source.charAt(prefixStart - 1))) prefixStart--;
         int previous = parser.before(prefixStart);
@@ -167,6 +156,28 @@ public final class HlslCompletionAnalysis {
             return new Result(Context.SUPPRESSED, List.of());
         }
         return new Result(Context.CODE, new ArrayList<>(visible.values()));
+    }
+
+    /** What is visible at an offset: the symbols in scope there, and the fields of every structure. */
+    private record Visible(Map<String, Candidate> symbols, Map<String, Map<String, Candidate>> structures) { }
+
+    private static Visible visibleAt(Parser parser, int offset, List<CharSequence> includes) {
+        Map<String, Candidate> visible = new LinkedHashMap<>();
+        Map<String, Map<String, Candidate>> structures = new LinkedHashMap<>();
+        for (CharSequence include : includes) {
+            Parser imported = new Parser(include, true);
+            structures.putAll(imported.structures);
+            for (Symbol symbol : imported.symbols) {
+                if (symbol.exported && (symbol.candidate.kind != Kind.MACRO || symbol.end > include.length())) {
+                    visible.put(symbol.candidate.name, symbol.candidate);
+                }
+            }
+        }
+        structures.putAll(parser.structures);
+        for (Symbol symbol : parser.symbols) {
+            if (symbol.start <= offset && offset < symbol.end) visible.put(symbol.candidate.name, symbol.candidate);
+        }
+        return new Visible(visible, structures);
     }
 
     /**
@@ -210,8 +221,9 @@ public final class HlslCompletionAnalysis {
 
     /**
      * The call the caret sits inside, when the callee is a function declared in the file or in its include
-     * chain. Control-flow parentheses and value constructors such as {@code float4(...)} are not calls, so
-     * they produce nothing rather than a misleading popup.
+     * chain, an intrinsic function such as {@code lerp}, or a method of a built-in type such as the
+     * {@code GetDimensions} of a texture. Control-flow parentheses and value constructors such as
+     * {@code float4(...)} are not calls, so they produce nothing rather than a misleading popup.
      */
     public static CallInfo callAt(CharSequence source, int offset, List<CharSequence> includes) {
         if (isSuppressed(source, offset)) return null;
@@ -224,14 +236,23 @@ public final class HlslCompletionAnalysis {
         if (close != null && parser.tokens.get(close).start < position) return null;
         String name = parser.tokens.get(open - 1).text;
         if (NOT_A_CALL.contains(name)) return null;
+        int argument = argumentIndex(parser, open, position);
+        if (parser.is(open - 2, ".")) {
+            // A method belongs to the type of its receiver, never to a global function of the same name.
+            Visible scope = visibleAt(parser, position, includes);
+            String receiver = parser.expressionType(open - 3, scope.symbols(), scope.structures());
+            List<Signature> methods = receiver == null ? List.of() : HlslBuiltins.methodSignatures(receiver, name);
+            return methods.isEmpty() ? null : new CallInfo(name, argument, methods);
+        }
         Map<String, Set<Signature>> merged = new LinkedHashMap<>();
         for (CharSequence include : includes) {
             addSignatures(new Parser(include, true).functions, merged);
         }
         addSignatures(parser.functions, merged);
         Set<Signature> overloads = merged.get(name);
-        if (overloads == null || overloads.isEmpty()) return null;
-        return new CallInfo(name, argumentIndex(parser, open, position), List.copyOf(overloads));
+        if (overloads != null && !overloads.isEmpty()) return new CallInfo(name, argument, List.copyOf(overloads));
+        List<Signature> intrinsic = HlslBuiltins.functionSignatures(name);
+        return intrinsic.isEmpty() ? null : new CallInfo(name, argument, intrinsic);
     }
 
     /**
