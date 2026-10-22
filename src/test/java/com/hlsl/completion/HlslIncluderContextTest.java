@@ -23,7 +23,7 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
 
     private static final String CARET = "<caret>";
 
-    private static final String LIGHTING_UTIL = """
+    private static final String SHARED = """
             #include "Common.hlsl"
             // Constants of one pass
             struct FrameConstants
@@ -34,11 +34,11 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
             // Linear fog
             float3 AddHaze(float3 color, float viewDistance) { return color; }
             #include "Helper.hlsl"
-            struct AfterShadow { float Late; };
+            struct AfterHelper { float Late; };
             float LateValue;
             """;
 
-    private static final String SHADOW = """
+    private static final String HELPER = """
             float DepthOf(FrameConstants pass, float3 worldPos)
             {
                 return mul(float4(worldPos,1),pass.WorldToClip).w;
@@ -54,7 +54,7 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
     /** The reported case: the members of the struct Shared.hlsl declares before it includes Helper.hlsl. */
     public void testCompletionListsTheMembersOfAStructTheIncluderDeclares() {
         addReportedLayout();
-        openShadow(SHADOW.replace("pass.WorldToClip", "pass." + CARET));
+        openHelper(HELPER.replace("pass.WorldToClip", "pass." + CARET));
         myFixture.completeBasic();
         List<String> lookup = myFixture.getLookupElementStrings();
         assertNotNull("no completion list after pass.", lookup);
@@ -64,7 +64,7 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
 
     public void testOnlyWhatComesBeforeTheIncludeIsVisible() {
         addReportedLayout();
-        openShadow(SHADOW.replace("mul(float4(worldPos,1),pass.WorldToClip).w", CARET));
+        openHelper(HELPER.replace("mul(float4(worldPos,1),pass.WorldToClip).w", CARET));
         myFixture.completeBasic();
         List<String> lookup = myFixture.getLookupElementStrings();
         assertNotNull(lookup);
@@ -73,14 +73,14 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
         assertTrue("what the includer includes above the include is offered: " + lookup, lookup.contains("PI"));
         assertTrue("the root of the chain contributes its declarations too: " + lookup, lookup.contains("ColorOnly"));
         assertFalse("declared after the include: " + lookup, lookup.contains("LateValue"));
-        assertFalse("declared after the include: " + lookup, lookup.contains("AfterShadow"));
+        assertFalse("declared after the include: " + lookup, lookup.contains("AfterHelper"));
         assertFalse("the other root is not the one the helper is read through: " + lookup,
                 lookup.contains("DrawConstants"));
     }
 
     public void testThePragmaPicksTheRootWhoseDeclarationsAreSeen() {
         addReportedLayout();
-        openShadow("// #pragma hlsl root Main.hlsl\n" + SHADOW.replace("mul(float4(worldPos,1),pass.WorldToClip).w", CARET));
+        openHelper("// #pragma hlsl root Main.hlsl\n" + HELPER.replace("mul(float4(worldPos,1),pass.WorldToClip).w", CARET));
         myFixture.completeBasic();
         List<String> lookup = myFixture.getLookupElementStrings();
         assertNotNull(lookup);
@@ -93,7 +93,7 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
     /** A file with its own entry point is compiled on its own, so it has no includer to read. */
     public void testAFileWithItsOwnEntryPointSeesNoIncluder() {
         addReportedLayout();
-        openShadow("// #pragma hlsl entry VS\n" + SHADOW.replace("mul(float4(worldPos,1),pass.WorldToClip).w", CARET));
+        openHelper("// #pragma hlsl entry VS\n" + HELPER.replace("mul(float4(worldPos,1),pass.WorldToClip).w", CARET));
         myFixture.completeBasic();
         List<String> lookup = myFixture.getLookupElementStrings();
         assertNotNull(lookup);
@@ -103,7 +103,7 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
     public void testTheHelpersOwnDeclarationWins() {
         addReportedLayout();
         String own = "struct FrameConstants { float Own; };\n";
-        openShadow(own + SHADOW.replace("pass.WorldToClip", "pass." + CARET));
+        openHelper(own + HELPER.replace("pass.WorldToClip", "pass." + CARET));
         myFixture.completeBasic();
         List<String> lookup = myFixture.getLookupElementStrings();
         if (lookup == null) {
@@ -113,18 +113,18 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
             assertFalse("the includer's struct must not shadow the helper's own: " + lookup, lookup.contains("WorldToClip"));
         }
 
-        PsiElement target = singleTarget(SHADOW.indexOf("FrameConstants") + own.length());
+        PsiElement target = singleTarget(HELPER.indexOf("FrameConstants") + own.length());
         assertEquals("Helper.hlsl", target.getContainingFile().getName());
     }
 
     /** Edits in the includer reach the helper before they are saved. */
     public void testUnsavedEditsOfTheIncluderAreSeen() {
-        PsiFile lightingUtil = addReportedLayout();
-        Document document = FileDocumentManager.getInstance().getDocument(lightingUtil.getVirtualFile());
+        PsiFile shared = addReportedLayout();
+        Document document = FileDocumentManager.getInstance().getDocument(shared.getVirtualFile());
         assertNotNull(document);
         WriteCommandAction.runWriteCommandAction(getProject(), () ->
-                document.insertString(LIGHTING_UTIL.indexOf("float4 CameraPos;"), "float SplitCount;\n    "));
-        openShadow(SHADOW.replace("pass.WorldToClip", "pass." + CARET));
+                document.insertString(SHARED.indexOf("float4 CameraPos;"), "float SplitCount;\n    "));
+        openHelper(HELPER.replace("pass.WorldToClip", "pass." + CARET));
         myFixture.completeBasic();
         List<String> lookup = myFixture.getLookupElementStrings();
         assertNotNull(lookup);
@@ -133,7 +133,7 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
 
     public void testParameterInfoShowsAFunctionTheIncluderDeclares() {
         addReportedLayout();
-        openShadow(SHADOW.replace("mul(float4(worldPos,1),pass.WorldToClip).w", "AddHaze(worldPos, " + CARET + ").x"));
+        openHelper(HELPER.replace("mul(float4(worldPos,1),pass.WorldToClip).w", "AddHaze(worldPos, " + CARET + ").x"));
         MockCreateParameterInfoContext context =
                 new MockCreateParameterInfoContext(myFixture.getEditor(), myFixture.getFile());
         assertNotNull("the call to AddHaze has parameter info",
@@ -146,8 +146,8 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
 
     public void testHoverDescribesAStructTheIncluderDeclares() {
         addReportedLayout();
-        openShadow(SHADOW);
-        PsiElement element = myFixture.getFile().findElementAt(SHADOW.indexOf("FrameConstants") + 2);
+        openHelper(HELPER);
+        PsiElement element = myFixture.getFile().findElementAt(HELPER.indexOf("FrameConstants") + 2);
         assertNotNull(element);
         String hover = new HlslDocumentationProvider().generateHoverDoc(element, element);
         assertNotNull("hovering FrameConstants in Helper.hlsl must describe it", hover);
@@ -158,24 +158,24 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
     /** Ctrl+Click on FrameConstants in Helper.hlsl opens its declaration in Shared.hlsl. */
     public void testNavigationGoesToTheIncludersDeclaration() {
         addReportedLayout();
-        openShadow(SHADOW);
-        PsiElement target = singleTarget(SHADOW.indexOf("FrameConstants") + 2);
+        openHelper(HELPER);
+        PsiElement target = singleTarget(HELPER.indexOf("FrameConstants") + 2);
         assertEquals("Shared.hlsl", target.getContainingFile().getName());
-        assertEquals(LIGHTING_UTIL.indexOf("FrameConstants"), target.getTextRange().getStartOffset());
+        assertEquals(SHARED.indexOf("FrameConstants"), target.getTextRange().getStartOffset());
     }
 
     public void testNavigationReachesWhatTheIncluderIncludesBeforeTheHelper() {
         addReportedLayout();
-        String text = SHADOW.replace("mul(float4(worldPos,1),pass.WorldToClip).w", "PI");
-        openShadow(text);
+        String text = HELPER.replace("mul(float4(worldPos,1),pass.WorldToClip).w", "PI");
+        openHelper(text);
         PsiElement target = singleTarget(text.indexOf("PI;") + 1);
         assertEquals("Common.hlsl", target.getContainingFile().getName());
     }
 
     public void testNavigationDoesNotGoPastTheInclude() {
         addReportedLayout();
-        String text = SHADOW.replace("mul(float4(worldPos,1),pass.WorldToClip).w", "LateValue");
-        openShadow(text);
+        String text = HELPER.replace("mul(float4(worldPos,1),pass.WorldToClip).w", "LateValue");
+        openHelper(text);
         assertEquals("LateValue is declared after the include of Helper.hlsl", 0,
                 GotoDeclarationAction.findAllTargetElements(getProject(), myFixture.getEditor(),
                         text.indexOf("LateValue") + 2).length);
@@ -187,19 +187,19 @@ public class HlslIncluderContextTest extends BasePlatformTestCase {
      */
     private PsiFile addReportedLayout() {
         myFixture.addFileToProject("HLSL/Common.hlsl", "static const float PI = 3.14159f;\n");
-        PsiFile lightingUtil = myFixture.addFileToProject("HLSL/Shared.hlsl", LIGHTING_UTIL);
+        PsiFile shared = myFixture.addFileToProject("HLSL/Shared.hlsl", SHARED);
         myFixture.addFileToProject("HLSL/Main.hlsl",
                 "struct DrawConstants { float4x4 World; };\n#include \"Shared.hlsl\"\n");
         myFixture.addFileToProject("HLSL/Alt.hlsl",
                 "struct ColorOnly { float Tint; };\n#include \"Shared.hlsl\"\n");
-        return lightingUtil;
+        return shared;
     }
 
     /** Opens Helper.hlsl next to its includers, with the caret where {@code <caret>} stands. */
-    private void openShadow(String text) {
+    private void openHelper(String text) {
         int caret = text.indexOf(CARET);
-        PsiFile shadow = myFixture.addFileToProject("HLSL/Helper.hlsl", text.replace(CARET, ""));
-        myFixture.configureFromExistingVirtualFile(shadow.getVirtualFile());
+        PsiFile helper = myFixture.addFileToProject("HLSL/Helper.hlsl", text.replace(CARET, ""));
+        myFixture.configureFromExistingVirtualFile(helper.getVirtualFile());
         if (caret >= 0) myFixture.getEditor().getCaretModel().moveToOffset(caret);
     }
 
