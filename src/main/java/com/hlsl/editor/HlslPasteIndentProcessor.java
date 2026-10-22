@@ -142,9 +142,10 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
      * when the block's own indentation is measured against the target's.</p>
      */
     private static void align(@NotNull Editor editor, @NotNull Document document, int start, int end,
-                              @NotNull List<String> block) {        // A block pasted behind existing code gets a line of its own, so it is not glued to that code. A single
-        // line that starts at column zero stays where it was put: it continues the line it is pasted into,
-        // which is how a trailing comment is written.
+                              @NotNull List<String> block) {
+        // A block pasted behind existing code gets a line of its own, so it is not glued to that code. A single
+        // line that starts at column zero, or a single-line comment, stays where it was put: it continues the
+        // line it is pasted into, which is how a trailing comment is written.
         if (!isFirstOnLine(document, start) && startsABlock(block)) {
             int line = document.getLineNumber(start);
             String indent = HlslIndent.indentFor(editor, line);
@@ -159,7 +160,8 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
             if (contentEnd < start) document.deleteString(contentEnd, start);
             start = contentEnd;
             document.insertString(start, "\n" + indent);
-            start = start + 1 + indent.length();        }
+            start = start + 1 + indent.length();
+        }
 
         // The pasted text is what the copied text was, so its length tells where the region ends. The platform
         // may have indented only part of it, and the report bounds end at the first line.
@@ -173,7 +175,8 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
 
         int copied = 0;
         // How many blocks the lines before this one have opened and not closed yet.
-        int depth = 0;        for (int line = first; line <= last; line++) {
+        int depth = 0;
+        for (int line = first; line <= last; line++) {
             int lineStart = document.getLineStartOffset(line);
             int lineEnd = document.getLineEndOffset(line);
             String stripped = document.getText(new TextRange(lineStart, lineEnd)).stripLeading();
@@ -200,7 +203,8 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
             if (!replacement.equals(current)) document.replaceString(lineStart, lineEnd, replacement);
             depth += netBraceDepth(stripped);
             copied++;
-        }    }
+        }
+    }
 
     /** How many blocks a line opens, one more for an opener than for a closer. */
     private static int netBraceDepth(@NotNull String line) {
@@ -220,15 +224,16 @@ public class HlslPasteIndentProcessor extends CopyPastePostProcessor<HlslPasteIn
     }
 
     /**
-     * True when the copied text is code that belongs on its own line: it carries its own indentation, it has
-     * more than one line of content, or it is a comment on its own. Only a plain single-line fragment stays
-     * where it was put, which is how text is appended to a line.
+     * True when the copied text is code that belongs on its own line: it has more than one line of content,
+     * or it carries its own indentation. A plain single-line fragment stays where it was put, which is how
+     * text is appended to a line, and so does a single-line comment, which is how a trailing comment is
+     * written.
      */
     private static boolean startsABlock(@NotNull List<String> block) {
-        if (block.isEmpty()) return false;
+        if (block.size() != 1) return block.size() > 1;
         String first = block.get(0).stripLeading();
-        if (indentWidth(block.get(0)) > 0 || block.size() > 1) return true;
-        return first.startsWith("//") || first.startsWith("/*");
+        if (first.startsWith("//") || first.startsWith("/*")) return false;
+        return indentWidth(block.get(0)) > 0;
     }
 
     private static int indentWidth(@NotNull String line) {

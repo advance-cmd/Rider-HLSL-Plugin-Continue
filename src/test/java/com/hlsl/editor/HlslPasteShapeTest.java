@@ -13,19 +13,38 @@ import java.awt.datatransfer.StringSelection;
  */
 public class HlslPasteShapeTest extends BasePlatformTestCase {
 
-    /**
-     * A comment pasted at the end of a line gets a line of its own at that indentation. The platform used to
-     * put the copied text above the line because it indented the line and moved what was already there down.
-     */
-    public void testPastingASingleLineComment() {
-        paste("float4 PS(float2 texel) : SV_Target\n{\n    int dir = 1;\n    int2 a = texel + dir;<caret>\n}\n",
-                "// 前后各取几个样本，i = 0 是中心");
+    /** The reported case: a comment pasted at the end of a line stays on it, as a trailing comment. */
+    public void testPastingASingleLineCommentAtTheEndOfALineKeepsItThere() {
+        paste("float4 PS(float2 texel) : SV_Target\n{\n    int dir = 1;\n    int2 a = texel + dir; <caret>\n}\n",
+                "// 123456");
         assertEquals("""
                 float4 PS(float2 texel) : SV_Target
                 {
                     int dir = 1;
-                    int2 a = texel + dir;
-                    // 前后各取几个样本，i = 0 是中心
+                    int2 a = texel + dir; // 123456
+                }
+                """, documentText());
+    }
+
+    /** A comment copied with the indentation of its line still continues the line it is pasted at the end of. */
+    public void testPastingAnIndentedCommentAtTheEndOfALineKeepsItThere() {
+        paste("void f()\n{\n    int dir = 1;<caret>\n}\n", "    /* 123456 */");
+        assertEquals("""
+                void f()
+                {
+                    int dir = 1;    /* 123456 */
+                }
+                """, documentText());
+    }
+
+    /** On a line of its own a pasted comment still takes the line's indentation. */
+    public void testPastingACommentOnAnEmptyLineIndentsIt() {
+        paste("void f()\n{\n    int dir = 1;\n<caret>\n}\n", "// 123456");
+        assertEquals("""
+                void f()
+                {
+                    int dir = 1;
+                    // 123456
                 }
                 """, documentText());
     }
