@@ -19,7 +19,7 @@ that are compiled by a C++ build system which passes its own preprocessor macros
   strings are not counted, and the indentation unit comes from the IDE's code style, so tabs stay tabs
 - **Pasting keeps the block's shape**: a pasted block is moved to the indentation of the line it lands on
   instead of being indented on top of the indentation it already carried, so pasting the same block twice
-  does not push it deeper every time
+  does not push it deeper every time. A single-line comment pasted at the end of a line stays on that line
 
 ### Completion
 
@@ -62,7 +62,9 @@ that are compiled by a C++ build system which passes its own preprocessor macros
   semantics
 - Parameter info opens by itself after a function name is completed and when `(` or `,` is typed, with the
   argument being edited highlighted and `↑`/`↓` to move through overloads. In a helper it knows the functions
-  the shaders including it declare before their `#include` of it
+  the shaders including it declare before their `#include` of it. Methods of built-in resource types, such as
+  `GetDimensions` or `SampleLevel` of a texture, are looked up on the type of the resource they are called on,
+  and intrinsic functions such as `lerp` show their parameters as well
 
 ### Navigation
 
@@ -215,7 +217,7 @@ handler.
 Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
 sources are not in the repository, so the build skips the test classes that need them unless the sources are
 provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
-a directory that holds them. With the sources in place the whole suite runs — 228 tests.
+a directory that holds them. With the sources in place the whole suite runs — 237 tests.
 
 ## Compatibility
 

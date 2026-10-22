@@ -11,11 +11,12 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
-            <li>In a helper that another shader includes, completion, parameter info, hover and Ctrl+Click know
-                what the shaders including it declare before their #include of it, such as a constant buffer
-                struct declared by the header that includes the helper: its members are completed, and
-                Ctrl+Click opens its declaration.</li>
-            <li>A struct such a helper gets from the shader including it is coloured as a struct name.</li>
+            <li>Parameter info shows the methods of built-in resource types, such as both forms of
+                <code>GetDimensions</code> on a texture or <code>Append</code> on an append buffer, with the
+                element type in place of <code>T</code>. Intrinsic functions such as <code>lerp</code> and
+                <code>sincos</code> show their parameters too.</li>
+            <li>A single-line comment pasted at the end of a line of code stays on that line as a trailing comment
+                instead of moving to the next line.</li>
         </ul>
     ]]></change-notes>
 
