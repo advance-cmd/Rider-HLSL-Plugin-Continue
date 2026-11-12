@@ -2,6 +2,7 @@ package com.hlsl.validation;
 
 import com.hlsl.HlslFileType;
 import com.hlsl.completion.HlslIncludeIndex;
+import com.hlsl.completion.HlslUnityPaths;
 import com.hlsl.documentation.HlslBuiltins;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.ExternalAnnotator;
@@ -26,12 +27,15 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -47,6 +51,16 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
             Pattern.compile("use of undeclared identifier '([A-Za-z_][A-Za-z0-9_]*)'");
     /** How far along the line the name quoted in a message may stand from the position DXC reported. */
     private static final int MAX_NAME_DISTANCE = 40;
+    /**
+     * What Unity's importer appends to a .urtshader to build its hardware ray tracing variant, after a
+     * {@code #define UNIFIED_RT_BACKEND_HARDWARE} in front of it.
+     */
+    static final String URT_HARDWARE_RAYGEN =
+            "Packages/com.unity.render-pipelines.core/Runtime/UnifiedRayTracing/Hardware/HardwareRaygenShader.hlsl";
+    /** Ray tracing shaders are libraries without one entry point, which DXC builds from shader model 6.3 on. */
+    static final String URT_PROFILE = "lib_6_3";
+    /** A bound on the Unity files one compile copies, in case the includes of a project run away. */
+    private static final int MAX_UNITY_FILES = 256;
 
     /**
      * One file of the include chain a helper is compiled through: its path, where it goes relative to the other
@@ -68,6 +82,12 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
         final HlslDxcSource options;
         /** Something to tell about the chain, such as a root named by a pragma that does not include the file. */
         final @Nullable String notice;
+        /**
+         * The files of a Unity project the compile reaches through paths such as
+         * {@code Packages/com.unity.render-pipelines.core/...}, each with the path Unity gives it, so they can be
+         * laid out where those includes find them.
+         */
+        final List<ContextFile> unityFiles;
 
         CollectedInfo(String fileContent, String filePath, long modificationStamp, HlslDxcSettings.State settings) {
             this(fileContent, filePath, modificationStamp, settings, List.of());
@@ -80,6 +100,12 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
 
         CollectedInfo(String fileContent, String filePath, long modificationStamp, HlslDxcSettings.State settings,
                       List<String> buildMacros, List<ContextFile> context, @Nullable String notice) {
+            this(fileContent, filePath, modificationStamp, settings, buildMacros, context, notice, List.of());
+        }
+
+        CollectedInfo(String fileContent, String filePath, long modificationStamp, HlslDxcSettings.State settings,
+                      List<String> buildMacros, List<ContextFile> context, @Nullable String notice,
+                      List<ContextFile> unityFiles) {
             this.fileContent = fileContent;
             this.filePath = filePath;
             this.modificationStamp = modificationStamp;
@@ -89,11 +115,17 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
             this.context = List.copyOf(context);
             this.options = this.context.isEmpty() ? source : new HlslDxcSource(this.context.get(0).text());
             this.notice = notice;
+            this.unityFiles = List.copyOf(unityFiles);
         }
 
         /** The file DXC is asked to compile, which is the root of the chain when there is one. */
         String compiledPath() {
             return context.isEmpty() ? filePath : context.get(0).path();
+        }
+
+        /** True when a Unity Unified Ray Tracing shader is compiled, which Unity wraps before compiling it. */
+        boolean urtShader() {
+            return isUrtShader(compiledPath());
         }
 
         boolean matches(String currentPath, long currentStamp, String currentText) {
@@ -110,6 +142,8 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
         VirtualFile virtualFile = file.getVirtualFile();
         // The built-ins file only lists declarations for reading; compiling it would report every one of them.
         if (virtualFile == null || HlslBuiltins.isBuiltinsFile(virtualFile)) return null;
+        // A package Unity downloaded is Unity's to compile, as part of the shaders that include it.
+        if (HlslUnityPaths.isInPackageCache(virtualFile)) return null;
         Document document = FileDocumentManager.getInstance().getDocument(virtualFile);
         if (document == null) return null;
         String text = document.getText();
@@ -119,6 +153,7 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
         // A helper is compiled through the shader that includes it, which declares what the helper uses. A
         // file that sets its own profile or entry point is meant to be compiled on its own.
         List<ContextFile> context = List.of();
+        List<VirtualFile> compiledFiles = List.of(virtualFile);
         String notice = null;
         VirtualFile compiled = virtualFile;
         String compiledText = text;
@@ -129,6 +164,7 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
             List<ContextFile> chainContext = chain == null ? null : contextOf(chain, virtualFile, text);
             if (chainContext != null) {
                 context = chainContext;
+                compiledFiles = chain.files();
                 compiled = chain.root();
                 compiledText = chainContext.get(0).text();
             }
@@ -139,8 +175,62 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
         }
         List<String> buildMacros = settings.autoDetectBuildMacros
                 ? detectBuildMacros(file.getProject(), compiled, compiledText) : List.of();
+        List<String> compiledTexts = new ArrayList<>();
+        if (context.isEmpty()) compiledTexts.add(text);
+        for (ContextFile step : context) compiledTexts.add(step.text());
+        List<ContextFile> unityFiles = unityFiles(compiledFiles, compiledTexts, isUrtShader(compiled.getPath()));
         return new CollectedInfo(text, virtualFile.getPath(), document.getModificationStamp(),
-                settings, buildMacros, context, notice);
+                settings, buildMacros, context, notice, unityFiles);
+    }
+
+    static boolean isUrtShader(String path) {
+        return path.toLowerCase(Locale.ROOT).endsWith(".urtshader");
+    }
+
+    /**
+     * The files of a Unity project that the compiled files reach through their includes, resolved the way the
+     * plugin resolves includes, each with the path Unity gives it. DXC knows nothing of Unity's packages: an
+     * include of {@code Packages/com.unity.render-pipelines.core/...} names a directory that does not exist,
+     * because Unity keeps the package in Library/PackageCache under its name and a hash. Copies laid out by those
+     * paths in the temporary directory, which the compile searches, are what the includes find. Nothing is
+     * written into the Unity project. Empty outside a Unity project.
+     */
+    static List<ContextFile> unityFiles(List<VirtualFile> files, List<String> texts, boolean urtShader) {
+        if (files.isEmpty()) return List.of();
+        VirtualFile root = HlslUnityPaths.projectRoot(files.get(0));
+        if (root == null) return List.of();
+        Set<VirtualFile> reached = new HashSet<>(files);
+        Map<VirtualFile, String> textOf = new HashMap<>();
+        for (int i = 0; i < files.size(); i++) textOf.put(files.get(i), texts.get(i));
+        ArrayDeque<VirtualFile> queue = new ArrayDeque<>(files);
+        List<ContextFile> staged = new ArrayList<>();
+        while (!queue.isEmpty() && reached.size() < MAX_UNITY_FILES) {
+            ProgressManager.checkCanceled();
+            VirtualFile next = queue.poll();
+            List<String> includes = new ArrayList<>(HlslIncludeIndex.parseIncludes(textOf.get(next)));
+            // Unity appends the ray generation shader to a .urtshader, which so includes it last.
+            if (urtShader && next.equals(files.get(0))) includes.add(URT_HARDWARE_RAYGEN);
+            for (String include : includes) {
+                VirtualFile resolved = HlslIncludeIndex.resolve(next, include);
+                if (resolved == null || !reached.add(resolved)) continue;
+                String content = currentText(resolved);
+                if (content == null) continue;
+                textOf.put(resolved, content);
+                queue.add(resolved);
+                String projectPath = HlslUnityPaths.projectPath(root, resolved);
+                if (projectPath != null) staged.add(new ContextFile(resolved.getPath(), projectPath, content));
+            }
+        }
+        return staged;
+    }
+
+    /**
+     * The text DXC compiles for a .urtshader, put together as Unity's importer does for the hardware ray tracing
+     * variant: the backend macro, the shader, and the ray generation shader that calls its RayGenExecute. The
+     * {@code #line 1} keeps the lines of the diagnostics those of the shader as it is written.
+     */
+    static String urtWrapper(String text) {
+        return "#define UNIFIED_RT_BACKEND_HARDWARE\n#line 1\n" + text + "\n#include \"" + URT_HARDWARE_RAYGEN + "\"\n";
     }
 
     /**
@@ -243,21 +333,35 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
             Path editedFile;
             if (info.context.isEmpty()) {
                 compiledFile = editedFile = tempDirectory.resolve("source.hlsl");
-                Files.writeString(compiledFile, info.source.compilerText(), StandardCharsets.UTF_8);
+                String compiled = info.source.compilerText();
+                Files.writeString(compiledFile, info.urtShader() ? urtWrapper(compiled) : compiled, StandardCharsets.UTF_8);
             } else {
                 // The chain is written with its layout kept, so its relative includes reach these copies, with
                 // their unsaved edits, before the files on disk.
                 Path chain = tempDirectory.resolve("chain");
-                for (ContextFile file : info.context) {
+                for (int i = 0; i < info.context.size(); i++) {
+                    ContextFile file = info.context.get(i);
                     Path copy = chain.resolve(file.relativePath());
                     Files.createDirectories(copy.getParent());
-                    Files.writeString(copy, new HlslDxcSource(file.text()).compilerText(), StandardCharsets.UTF_8);
+                    String compiled = new HlslDxcSource(file.text()).compilerText();
+                    Files.writeString(copy, i == 0 && info.urtShader() ? urtWrapper(compiled) : compiled,
+                            StandardCharsets.UTF_8);
                 }
                 compiledFile = chain.resolve(info.context.get(0).relativePath());
                 editedFile = chain.resolve(info.context.get(info.context.size() - 1).relativePath());
             }
+            // Unity's packages, laid out by the paths Unity includes them by.
+            Path unityDirectory = null;
+            if (!info.unityFiles.isEmpty()) {
+                unityDirectory = tempDirectory.resolve("unity");
+                for (ContextFile file : info.unityFiles) {
+                    Path copy = unityDirectory.resolve(file.relativePath());
+                    Files.createDirectories(copy.getParent());
+                    Files.writeString(copy, file.text(), StandardCharsets.UTF_8);
+                }
+            }
 
-            List<String> command = buildCommand(info, dxcPath, compiledFile, objectFile);
+            List<String> command = buildCommand(info, dxcPath, compiledFile, objectFile, unityDirectory);
             ProcessBuilder builder = new ProcessBuilder(command);
             File originalDirectory = new File(info.compiledPath()).getAbsoluteFile().getParentFile();
             if (originalDirectory != null) builder.directory(originalDirectory);
@@ -317,8 +421,13 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
     }
 
     static List<String> buildCommand(CollectedInfo info, String executable, Path sourceFile, Path objectFile) {
+        return buildCommand(info, executable, sourceFile, objectFile, null);
+    }
+
+    static List<String> buildCommand(CollectedInfo info, String executable, Path sourceFile, Path objectFile,
+                                     @Nullable Path unityDirectory) {
         HlslDxcSettings.State settings = info.settings;
-        String profile = info.options.option("profile", settings.defaultProfile);
+        String profile = info.options.option("profile", info.urtShader() ? URT_PROFILE : settings.defaultProfile);
         List<String> command = new ArrayList<>(List.of(executable, "-T", profile));
         // Library profiles have no single entry point.
         if (!profile.startsWith("lib_")) {
@@ -342,6 +451,8 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
         // (or -Wpayload-access-warning) in DXC: passing them only adds "unknown warning option" lines.
         addWarningGroup(command, everything, settings.warnConversion || settings.warnImplicitTruncation, "-Wconversion");
         addWarningGroup(command, everything, settings.warnEffectsSyntax, "-Weffects-syntax");
+        // Unity reads pragmas of its own, such as max_recursion_depth, which DXC does not know.
+        if (info.urtShader()) command.add("-Wno-unknown-pragmas");
         String hlslVersion = info.options.option("hv", settings.hlslVersion);
         if (hlslVersion != null && !hlslVersion.isBlank()) command.addAll(List.of("-HV", hlslVersion));
         if (settings.treatWarningsAsErrors) command.add("-WX");
@@ -370,6 +481,7 @@ public class HlslDxcAnnotator extends ExternalAnnotator<HlslDxcAnnotator.Collect
         for (String directory : directories) {
             if (directory != null) command.addAll(List.of("-I", directory));
         }
+        if (unityDirectory != null) command.addAll(List.of("-I", unityDirectory.toString()));
         command.addAll(List.of("-Fo", objectFile.toString(), sourceFile.toString()));
         return command;
     }

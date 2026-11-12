@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  */
 public final class HlslCompletionAnalysis {
     enum Context { CODE, SEMANTIC, MEMBER, ATTRIBUTE, SUPPRESSED }
-    public enum Kind { TYPE, FUNCTION, VARIABLE, MACRO, FIELD }
+    public enum Kind { TYPE, FUNCTION, VARIABLE, MACRO, FIELD, NAMESPACE }
     record Candidate(String name, String type, Kind kind) { }
     record Result(Context context, List<Candidate> candidates) { }
 
@@ -149,24 +149,68 @@ public final class HlslCompletionAnalysis {
             if (parser.isSemanticColon(previous)) {
                 return new Result(Context.SEMANTIC, List.of());
             }
-            if (parser.is(previous - 1, ":")) return new Result(Context.SUPPRESSED, List.of());
+            if (parser.isScope(previous - 1)) {
+                // After UnifiedRT:: come the names the namespace declares, and nothing global.
+                int qualifier = previous - 2;
+                if (!parser.name(qualifier)) return new Result(Context.SUPPRESSED, List.of());
+                String name = parser.qualifiedText(parser.qualifiedStart(qualifier), qualifier);
+                return new Result(Context.MEMBER, scopeMembers(name, visible, structures));
+            }
         }
         // Typing the name of a declaration is not a place to suggest unrelated global symbols.
         if (prefixStart < offset && parser.isDeclaratorPosition(prefixStart, visible, structures)) {
             return new Result(Context.SUPPRESSED, List.of());
         }
-        return new Result(Context.CODE, new ArrayList<>(visible.values()));
+        // A name declared in a namespace is only reachable through it, so the list offers the namespace.
+        List<Candidate> unqualified = new ArrayList<>();
+        for (Candidate candidate : visible.values()) {
+            if (!candidate.name.contains("::")) unqualified.add(candidate);
+        }
+        return new Result(Context.CODE, unqualified);
     }
 
-    /** What is visible at an offset: the symbols in scope there, and the fields of every structure. */
-    private record Visible(Map<String, Candidate> symbols, Map<String, Map<String, Candidate>> structures) { }
+    /**
+     * What a qualifier gives access to: the names {@code namespace UnifiedRT} declares for {@code UnifiedRT::},
+     * each under its own name, or the static methods of a structure for {@code Hit::}.
+     */
+    private static List<Candidate> scopeMembers(String qualifier, Map<String, Candidate> visible,
+                                                Map<String, Map<String, Candidate>> structures) {
+        String prefix = qualifier + "::";
+        List<Candidate> members = new ArrayList<>();
+        for (Candidate candidate : visible.values()) {
+            if (!candidate.name.startsWith(prefix)) continue;
+            String member = candidate.name.substring(prefix.length());
+            if (!member.contains("::")) members.add(new Candidate(member, candidate.type, candidate.kind));
+        }
+        if (members.isEmpty()) {
+            Map<String, Candidate> fields = structures.get(structureKey(qualifier, structures));
+            if (fields != null) {
+                for (Candidate field : fields.values()) {
+                    if (field.kind == Kind.FUNCTION) members.add(field);
+                }
+            }
+        }
+        return members;
+    }
+
+    /**
+     * What is visible at an offset: the symbols in scope there, the fields of every structure, and the
+     * signatures of every function and of every method a structure declares. A name declared in a namespace is
+     * kept under its qualified name, as {@code UnifiedRT::TraceRayClosestHit}.
+     */
+    private record Visible(Map<String, Candidate> symbols, Map<String, Map<String, Candidate>> structures,
+                           Map<String, Set<Signature>> functions, Map<String, Map<String, Set<Signature>>> methods) { }
 
     private static Visible visibleAt(Parser parser, int offset, List<CharSequence> includes) {
         Map<String, Candidate> visible = new LinkedHashMap<>();
         Map<String, Map<String, Candidate>> structures = new LinkedHashMap<>();
+        Map<String, Set<Signature>> functions = new LinkedHashMap<>();
+        Map<String, Map<String, Set<Signature>>> methods = new LinkedHashMap<>();
         for (CharSequence include : includes) {
             Parser imported = new Parser(include, true);
             structures.putAll(imported.structures);
+            addSignatures(imported.functions, functions);
+            addMethods(imported.methods, methods);
             for (Symbol symbol : imported.symbols) {
                 if (symbol.exported && (symbol.candidate.kind != Kind.MACRO || symbol.end > include.length())) {
                     visible.put(symbol.candidate.name, symbol.candidate);
@@ -174,10 +218,36 @@ public final class HlslCompletionAnalysis {
             }
         }
         structures.putAll(parser.structures);
+        addSignatures(parser.functions, functions);
+        addMethods(parser.methods, methods);
         for (Symbol symbol : parser.symbols) {
             if (symbol.start <= offset && offset < symbol.end) visible.put(symbol.candidate.name, symbol.candidate);
         }
-        return new Visible(visible, structures);
+        return new Visible(visible, structures, functions, methods);
+    }
+
+    private static void addMethods(Map<String, Map<String, List<Signature>>> from,
+                                   Map<String, Map<String, Set<Signature>>> into) {
+        for (Map.Entry<String, Map<String, List<Signature>>> structure : from.entrySet()) {
+            addSignatures(structure.getValue(), into.computeIfAbsent(structure.getKey(), key -> new LinkedHashMap<>()));
+        }
+    }
+
+    /**
+     * The key {@code type} has in a map of structures. A namespace refers to its own structures without
+     * qualifying them, as the {@code Hit} that {@code UnifiedRT::TraceRayClosestHit} returns, so a plain name
+     * that is not found also matches the one structure of that name declared in a namespace.
+     */
+    private static String structureKey(String type, Map<String, ?> structures) {
+        if (type == null || structures.containsKey(type) || type.contains("::")) return type;
+        String suffix = "::" + type;
+        String found = null;
+        for (String key : structures.keySet()) {
+            if (!key.endsWith(suffix)) continue;
+            if (found != null) return type;
+            found = key;
+        }
+        return found != null ? found : type;
     }
 
     /**
@@ -221,7 +291,8 @@ public final class HlslCompletionAnalysis {
 
     /**
      * The call the caret sits inside, when the callee is a function declared in the file or in its include
-     * chain, an intrinsic function such as {@code lerp}, or a method of a built-in type such as the
+     * chain, also inside a namespace as {@code UnifiedRT::TraceRayClosestHit}, a method of a declared structure,
+     * an intrinsic function such as {@code lerp}, or a method of a built-in type such as the
      * {@code GetDimensions} of a texture. Control-flow parentheses and value constructors such as
      * {@code float4(...)} are not calls, so they produce nothing rather than a misleading popup.
      */
@@ -237,20 +308,27 @@ public final class HlslCompletionAnalysis {
         String name = parser.tokens.get(open - 1).text;
         if (NOT_A_CALL.contains(name)) return null;
         int argument = argumentIndex(parser, open, position);
+        Visible scope = visibleAt(parser, position, includes);
         if (parser.is(open - 2, ".")) {
             // A method belongs to the type of its receiver, never to a global function of the same name.
-            Visible scope = visibleAt(parser, position, includes);
             String receiver = parser.expressionType(open - 3, scope.symbols(), scope.structures());
-            List<Signature> methods = receiver == null ? List.of() : HlslBuiltins.methodSignatures(receiver, name);
+            if (receiver == null) return null;
+            Map<String, Set<Signature>> declared = scope.methods().get(structureKey(receiver, scope.methods()));
+            Set<Signature> own = declared == null ? null : declared.get(name);
+            List<Signature> methods = own != null && !own.isEmpty()
+                    ? List.copyOf(own) : HlslBuiltins.methodSignatures(receiver, name);
             return methods.isEmpty() ? null : new CallInfo(name, argument, methods);
         }
-        Map<String, Set<Signature>> merged = new LinkedHashMap<>();
-        for (CharSequence include : includes) {
-            addSignatures(new Parser(include, true).functions, merged);
-        }
-        addSignatures(parser.functions, merged);
-        Set<Signature> overloads = merged.get(name);
+        String callee = parser.qualifiedText(parser.qualifiedStart(open - 1), open - 1);
+        Set<Signature> overloads = scope.functions().get(callee);
         if (overloads != null && !overloads.isEmpty()) return new CallInfo(name, argument, List.copyOf(overloads));
+        if (!callee.equals(name)) {
+            // Hit::Invalid(): a static method, named through its structure.
+            Map<String, Set<Signature>> declared = scope.methods().get(
+                    structureKey(callee.substring(0, callee.length() - name.length() - 2), scope.methods()));
+            Set<Signature> statics = declared == null ? null : declared.get(name);
+            return statics == null || statics.isEmpty() ? null : new CallInfo(name, argument, List.copyOf(statics));
+        }
         List<Signature> intrinsic = HlslBuiltins.functionSignatures(name);
         return intrinsic.isEmpty() ? null : new CallInfo(name, argument, intrinsic);
     }
@@ -370,10 +448,10 @@ public final class HlslCompletionAnalysis {
     /** The fields a struct or constant buffer declares, or {@code null} when the type is not a structure. */
     private static Map<String, Candidate> declaredMembers(String type, Map<String, Map<String, Candidate>> structures) {
         if (type.endsWith("[]")) return null;
-        Map<String, Candidate> fields = structures.get(type);
+        Map<String, Candidate> fields = structures.get(structureKey(type, structures));
         String argument = typeArgument(type);
-        if (fields == null && argument != null) fields = structures.get(argument);
-        if (fields == null) fields = structures.get(baseType(type));
+        if (fields == null && argument != null) fields = structures.get(structureKey(argument, structures));
+        if (fields == null) fields = structures.get(structureKey(baseType(type), structures));
         return fields;
     }
 
@@ -462,6 +540,12 @@ public final class HlslCompletionAnalysis {
         final List<Symbol> symbols = new ArrayList<>();
         final Map<String, Map<String, Candidate>> structures = new LinkedHashMap<>();
         final Map<String, List<Signature>> functions = new LinkedHashMap<>();
+        /** The methods each structure declares, by the structure's qualified name. */
+        final Map<String, Map<String, List<Signature>>> methods = new LinkedHashMap<>();
+        /** The namespace being read, as {@code UnifiedRT}, or empty outside of every namespace. */
+        String namespace = "";
+        /** The qualified name of the structure whose body is being read, or {@code null}. */
+        String structure;
         /** Declarations together with the source text that documents them, for hover. */
         final Map<String, Declaration> declarations = new LinkedHashMap<>();
         /** Parentheses that belong to a declaration, where parameter info must stay quiet. */
@@ -547,8 +631,21 @@ public final class HlslCompletionAnalysis {
             for (int i = from; i < to;) {
                 ProgressManager.checkCanceled();
                 if (is(i, "namespace")) {
-                    // Namespace qualification requires name resolution; do not leak its contents globally.
                     int body = find(i + 1, to, "{", ";");
+                    if (scope == Scope.GLOBAL && body == i + 2 && is(body, "{") && name(i + 1)) {
+                        // What the namespace declares is kept under its qualified name, so it is reached as
+                        // UnifiedRT::Hit and never leaks among the global names.
+                        int end = close(body, to);
+                        String outer = namespace;
+                        namespace = qualify(tokens.get(i + 1).text);
+                        Token name = tokens.get(i + 1);
+                        symbols.add(new Symbol(new Candidate(namespace, "namespace", Kind.NAMESPACE),
+                                name.end, scopeEnd, true));
+                        parseRange(body + 1, end, scopeEnd, scope, null);
+                        namespace = outer;
+                        i = end + 1;
+                        continue;
+                    }
                     i = is(body, "{") ? close(body, to) + 1 : Math.max(i + 1, body + 1);
                     continue;
                 }
@@ -591,10 +688,48 @@ public final class HlslCompletionAnalysis {
                 add(i + 1, name, Kind.TYPE, scopeEnd, scope, null);
                 document(i + 1, Kind.TYPE, tokens.get(i).start, tokens.get(body).start);
                 Map<String, Candidate> fields = new LinkedHashMap<>();
-                if (tokens.get(i + 1).end <= completionOffset && completionOffset < scopeEnd) structures.put(name, fields);
+                String qualified = scope == Scope.GLOBAL ? qualify(name) : name;
+                if (tokens.get(i + 1).end <= completionOffset && completionOffset < scopeEnd) structures.put(qualified, fields);
+                String outer = structure;
+                structure = qualified;
                 parseRange(body + 1, end, scopeEnd, Scope.FIELDS, fields);
+                structure = outer;
             }
             return end + 1;
+        }
+
+        /** The name as it is reached from outside the namespace being read. */
+        String qualify(String name) {
+            return namespace.isEmpty() ? name : namespace + "::" + name;
+        }
+
+        /** True when the tokens at {@code i} and {@code i + 1} are the two colons of a {@code ::}. */
+        boolean isScope(int i) {
+            return is(i, ":") && is(i + 1, ":") && tokens.get(i).end == tokens.get(i + 1).start;
+        }
+
+        /** The first token of the qualified name {@code UnifiedRT::Hit} that ends with the name at {@code end}. */
+        int qualifiedStart(int end) {
+            int start = end;
+            while (isScope(start - 2) && name(start - 3)) start -= 3;
+            return start;
+        }
+
+        /** The qualified name between two tokens, as {@code UnifiedRT::Hit}. */
+        String qualifiedText(int start, int end) {
+            StringBuilder text = new StringBuilder(tokens.get(start).text);
+            for (int i = start + 3; i <= end; i += 3) text.append("::").append(tokens.get(i).text);
+            return text.toString();
+        }
+
+        /** Reads the possibly qualified name starting at {@code i} into {@code into}, returning the index after it. */
+        int readQualifiedName(int i, int to, StringBuilder into) {
+            into.append(tokens.get(i++).text);
+            while (i + 2 < to && isScope(i) && name(i + 2)) {
+                into.append("::").append(tokens.get(i + 2).text);
+                i += 3;
+            }
+            return i;
         }
 
         int parseDeclaration(int from, int to, int scopeEnd, Scope scope, Map<String, Candidate> fields) {
@@ -604,7 +739,8 @@ public final class HlslCompletionAnalysis {
             while (i < to && QUALIFIERS.contains(tokens.get(i).text)) i++;
             int typeStart = i;
             if (i >= to || (!name(i) && tokens.get(i).type != HlslTokenTypes.TYPE_KEYWORD)) return from;
-            StringBuilder type = new StringBuilder(tokens.get(i++).text);
+            StringBuilder type = new StringBuilder();
+            i = readQualifiedName(i, to, type);
             if (is(i, "<")) {
                 int depth = 0;
                 do {
@@ -620,7 +756,9 @@ public final class HlslCompletionAnalysis {
             if (i >= to || !name(i) || i == typeStart) return from;
             int declaredName = i++;
             if (is(i, "(")) {
-                if (scope != Scope.GLOBAL || typedef) return from;
+                // A function, or a method in the body of a structure, as the IsValid of a Hit.
+                boolean method = scope == Scope.FIELDS && structure != null;
+                if (scope != Scope.GLOBAL && !method || typedef) return from;
                 int paramsEnd = close(i, to);
                 if (paramsEnd >= to) return from;
                 int after = paramsEnd + 1;
@@ -629,8 +767,8 @@ public final class HlslCompletionAnalysis {
                     after = find(after + 1, to, "{", ";");
                 }
                 if (!is(after, "{") && !is(after, ";")) return from;
-                add(declaredName, type.toString(), Kind.FUNCTION, scopeEnd, scope, null);
-                declare(declaredName, type.toString(), i + 1, paramsEnd);
+                add(declaredName, type.toString(), Kind.FUNCTION, scopeEnd, scope, method ? fields : null);
+                declare(declaredName, type.toString(), i + 1, paramsEnd, method ? structure : null);
                 declarationParens.add(i);
                 // The attributes belong to the declaration: [numthreads(8, 8, 1)] stands between a compute
                 // shader and the comment that documents it.
@@ -676,10 +814,13 @@ public final class HlslCompletionAnalysis {
         void add(int token, String type, Kind kind, int scopeEnd, Scope scope, Map<String, Candidate> fields) {
             Token name = tokens.get(token);
             if (name.text.contains("IntellijIdeaRulezzz")) return;
-            Candidate candidate = new Candidate(name.text, type, scope == Scope.FIELDS ? Kind.FIELD : kind);
             if (scope == Scope.FIELDS) {
-                if (fields != null) fields.put(name.text, candidate);
-            } else symbols.add(new Symbol(candidate, name.end, scopeEnd, scope == Scope.GLOBAL));
+                Kind member = kind == Kind.FUNCTION ? Kind.FUNCTION : Kind.FIELD;
+                if (fields != null) fields.put(name.text, new Candidate(name.text, type, member));
+                return;
+            }
+            String qualified = scope == Scope.GLOBAL ? qualify(name.text) : name.text;
+            symbols.add(new Symbol(new Candidate(qualified, type, kind), name.end, scopeEnd, scope == Scope.GLOBAL));
         }
 
         /** Records a declaration's own text plus the comment block directly above it. */
@@ -695,11 +836,17 @@ public final class HlslCompletionAnalysis {
                     source.subSequence(startOffset, Math.min(endOffset, source.length())).toString().strip()));
         }
 
-        /** Remembers a function's parameter list so parameter info can show it. */
-        void declare(int nameToken, String returnType, int from, int to) {
+        /**
+         * Remembers a function's parameter list so parameter info can show it: under its qualified name, or
+         * among the methods of {@code owner} when it is declared in the body of that structure.
+         */
+        void declare(int nameToken, String returnType, int from, int to, String owner) {
             String name = tokens.get(nameToken).text;
             Signature signature = new Signature(name, returnType, parameters(from, to));
-            List<Signature> overloads = functions.computeIfAbsent(name, key -> new ArrayList<>());
+            Map<String, List<Signature>> into = owner == null
+                    ? functions : methods.computeIfAbsent(owner, key -> new LinkedHashMap<>());
+            List<Signature> overloads = into.computeIfAbsent(owner == null ? qualify(name) : name,
+                    key -> new ArrayList<>());
             if (!overloads.contains(signature)) overloads.add(signature);
         }
 
@@ -715,7 +862,8 @@ public final class HlslCompletionAnalysis {
                     i++;
                     continue;
                 }
-                StringBuilder type = new StringBuilder(tokens.get(i++).text);
+                StringBuilder type = new StringBuilder();
+                i = readQualifiedName(i, to, type);
                 if (is(i, "<")) {
                     int depth = 0;
                     while (i < to) {
@@ -748,7 +896,8 @@ public final class HlslCompletionAnalysis {
             return parameters;
         }
 
-        int statementEnd(int from, int to) {            for (int i = from; i < to; i++) {
+        int statementEnd(int from, int to) {
+            for (int i = from; i < to; i++) {
                 if (is(i, ";")) return i;
                 if (is(i, "(") || is(i, "[") || is(i, "{")) i = close(i, to);
             }
@@ -862,8 +1011,14 @@ public final class HlslCompletionAnalysis {
                 }
                 if (QUALIFIERS.contains(token.text)) { i--; continue; }
                 if (token.type == HlslTokenTypes.TYPE_KEYWORD) { sawType = true; i--; continue; }
-                if (isKnownType(token.text, visible, structures)) { sawType = true; i--; continue; }
-                if (name(i)) { names++; i--; continue; }
+                if (name(i)) {
+                    // A qualified type such as UnifiedRT::Hit counts as one type.
+                    int start = qualifiedStart(i);
+                    if (isKnownType(qualifiedText(start, i), visible, structures)) { sawType = true; i = start - 1; continue; }
+                    names++;
+                    i--;
+                    continue;
+                }
                 break;
             }
             return sawType && names <= 2;
@@ -937,7 +1092,7 @@ public final class HlslCompletionAnalysis {
             if (is(end - 1, ".")) {
                 String receiver = expressionType(end - 2, visible, structures);
                 symbol = members(receiver, structures).get(tokens.get(end).text);
-            } else symbol = visible.get(tokens.get(end).text);
+            } else symbol = visible.get(qualifiedText(qualifiedStart(end), end));
             return symbol == null || symbol.kind == Kind.FUNCTION || symbol.kind == Kind.TYPE ? null : symbol.type;
         }
 
@@ -962,7 +1117,8 @@ public final class HlslCompletionAnalysis {
                 return builtinResultType(calleeName, receiver, structures);
             }
             if (name(open - 1)) {
-                Candidate declared = visible.get(calleeName);
+                // UnifiedRT::TraceRayClosestHit(...) is declared under its qualified name.
+                Candidate declared = visible.get(qualifiedText(qualifiedStart(open - 1), open - 1));
                 if (declared != null) return declared.kind == Kind.FUNCTION ? useable(declared.type) : null;
             }
             // A constructor such as `float3(...)` names a type rather than a function.

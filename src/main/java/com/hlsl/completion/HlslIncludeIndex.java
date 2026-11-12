@@ -201,7 +201,8 @@ public final class HlslIncludeIndex {
         return parsed;
     }
 
-    static @NotNull List<String> parseIncludes(CharSequence source) {
+    /** The paths the {@code #include} directives of the text name, in order. */
+    public static @NotNull List<String> parseIncludes(CharSequence source) {
         return parseDirectives(source).stream().map(Include::path).toList();
     }
 
@@ -256,10 +257,13 @@ public final class HlslIncludeIndex {
 
     /**
      * The file an include names: relative to the including file's directory first, then to each directory
-     * above it, which is where shader trees usually keep their shared headers.
+     * above it, which is where shader trees usually keep their shared headers. In a Unity project a path that
+     * starts with Packages/ or Assets/ names a file of the project instead, as Unity resolves it.
      */
     public static @Nullable VirtualFile resolve(VirtualFile fromFile, String include) {
         String normalized = include.replace('\\', '/');
+        VirtualFile unity = HlslUnityPaths.resolve(fromFile, normalized);
+        if (unity != null) return unity;
         VirtualFile dir = fromFile.getParent();
         if (dir == null) return null;
 

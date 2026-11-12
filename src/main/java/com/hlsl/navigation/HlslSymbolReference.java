@@ -130,8 +130,6 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
         VirtualFile vf = file.getVirtualFile();
         if (vf == null) return null;
         if (!visited.add(vf.getPath())) return null;
-        VirtualFile baseDir = vf.getParent();
-        if (baseDir == null) return null;
 
         String content = file.getText();
         if (content == null) return null;
@@ -139,9 +137,10 @@ public class HlslSymbolReference extends PsiReferenceBase<PsiElement> {
         Matcher m = INCLUDE_PATTERN.matcher(content);
         while (m.find() && m.start(1) < limit) {
             String includePath = m.group(1);
-            VirtualFile included = baseDir.findFileByRelativePath(includePath);
+            // Resolved as completion resolves it: parent directories, and the packages of a Unity project.
+            VirtualFile included = HlslIncludeIndex.resolve(vf, includePath);
             if (included == null || !included.exists() || included.isDirectory()) {
-                LOG.debug("HLSL include: cannot resolve '" + includePath + "' from " + baseDir.getPath());
+                LOG.debug("HLSL include: cannot resolve '" + includePath + "' from " + vf.getPath());
                 continue;
             }
             PsiFile includedPsi = PsiManager.getInstance(file.getProject()).findFile(included);

@@ -43,6 +43,10 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 - Built-in functions are inserted with their parentheses
 - The popup stays closed while a declaration is being written, so naming a new variable does not offer the
   global vocabulary
+- Names a namespace declares, after the namespace and `::`: `UnifiedRT::` offers its constants, structs and
+  functions, and opens by itself when the second colon is typed. A variable of a qualified type such as
+  `UnifiedRT::Hit` offers the struct's fields and methods, and namespaced functions and struct methods have
+  parameter info. What a namespace declares is not offered among the global names
 
 ### Documentation
 
@@ -74,7 +78,7 @@ that are compiled by a C++ build system which passes its own preprocessor macros
 - `Ctrl+Click` on an intrinsic function, a built-in type or an attribute opens its declaration in a read-only
   built-ins file that the plugin generates, with the description written above each declaration
 - `Ctrl+Click` on the path of an `#include` opens the included file, found next to the shader or in a
-  directory above it
+  directory above it, or in a Unity project by its `Packages/` or `Assets/` path
 
 ### Live templates
 
@@ -161,6 +165,27 @@ Validation stays quiet so that real problems stand out.
 - Positionless compiler chatter is not reported
 - At most five file-level annotations are shown, followed by a summary line
 
+## Unity
+
+Unity's Unified Ray Tracing shaders (`.urtshader`) open as HLSL files.
+
+- **Includes by project path**: `#include "Packages/com.unity.render-pipelines.core/..."` and
+  `#include "Assets/..."` are resolved against the Unity project, the directory above the shader that holds
+  `Packages/manifest.json` and `Library/PackageCache`. A package embedded in `Packages/` comes first, then the
+  downloaded copy in `Library/PackageCache/<package>@<hash>/`, whatever its hash. Completion, hover,
+  `Ctrl+Click` and DXC all resolve includes this way, and nothing is ever written into the Unity project
+- **Namespaces**: see Completion; hover and `Ctrl+Click` reach a function such as
+  `UnifiedRT::TraceRayClosestHit` in the package
+- **DXC**: a `.urtshader` is compiled the way Unity's importer builds its hardware ray tracing variant:
+  `#define UNIFIED_RT_BACKEND_HARDWARE`, the shader, then Unity's `HardwareRaygenShader.hlsl`, as a `lib_6_3`
+  library without an entry point (a `profile` pragma still wins). The package files the shader reaches are
+  copied into the temporary compile directory under their `Packages/` paths, so DXC finds them, and the
+  diagnostics keep the shader's own line numbers. The compute variant is not checked. Files in
+  `Library/PackageCache` are not validated on their own
+- **Rider**: Rider's Unity support registers `.urtshader` for its own HLSL type, which only highlights. When a
+  `.urtshader` opens with that type, a banner offers **Open \*.urtshader with HLSL File**. By hand: under
+  **Settings → Editor → File Types**, remove `*.urtshader` from **HLSL** and add it to **HLSL File**
+
 ## clang-format
 
 The IDE's clang-format integration does not engage on these files, so Reformat Code is routed through
@@ -193,7 +218,7 @@ The configuration file is found by walking up from the file's directory, and ran
 
 ## Supported file extensions
 
-`hlsl` and `hlsli` are registered out of the box. Add more (`fx`, `fxh`, `vsh`, `psh`, `gsh`, `csh`, …)
+`hlsl`, `hlsli` and Unity's `urtshader` are registered out of the box. Add more (`fx`, `fxh`, `vsh`, `psh`, `gsh`, `csh`, …)
 under **Settings → Editor → File Types → HLSL File**.
 
 ## Installation
@@ -217,7 +242,9 @@ handler.
 Some tests check completion and documentation against the untrimmed shader sources of a real project. Those
 sources are not in the repository, so the build skips the test classes that need them unless the sources are
 provided: put them in `src/test/resources/dx12`, or point the `HLSL_TEST_SOURCE_DIR` environment variable at
-a directory that holds them. With the sources in place the whole suite runs — 237 tests.
+a directory that holds them. Two more tests check every `.urtshader` of a real Unity project, read-only, when
+the `HLSL_UNITY_PROJECT` environment variable points at one. With the sources in place the whole suite runs —
+274 tests.
 
 ## Compatibility
 

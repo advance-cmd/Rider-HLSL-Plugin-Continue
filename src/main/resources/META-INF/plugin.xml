@@ -6,7 +6,7 @@
     <vendor>DOCC</vendor>
     <description><![CDATA[
         Syntax highlighting and DXC validation for HLSL (High Level Shading Language) files.
-        Supports .hlsl and .hlsli file extensions by default.
+        Supports .hlsl, .hlsli and Unity .urtshader file extensions by default.
         Additional extensions (.fx, .fxh, .vsh, .psh, .gsh, .csh, etc.) can be added via Settings > Editor > File Types > HLSL.
     ]]></description>
     <change-notes><![CDATA[
@@ -31,7 +31,10 @@
                 implementationClass="com.hlsl.HlslFileType"
                 fieldName="INSTANCE"
                 language="HLSL"
-                extensions="hlsl;hlsli"/>
+                extensions="hlsl;hlsli;urtshader"/>
+
+        <!-- Rider's Unity support registers .urtshader for its own HLSL type; the banner offers to hand it over. -->
+        <editorNotificationProvider implementation="com.hlsl.HlslFileTypeConflictNotifier"/>
 
         <lang.parserDefinition
                 language="HLSL"

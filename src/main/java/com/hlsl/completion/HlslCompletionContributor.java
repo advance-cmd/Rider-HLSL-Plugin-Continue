@@ -22,6 +22,7 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.patterns.PlatformPatterns;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
@@ -36,6 +37,18 @@ public class HlslCompletionContributor extends CompletionContributor {
         extend(CompletionType.BASIC,
                 PlatformPatterns.psiElement().withLanguage(HlslLanguage.INSTANCE),
                 new HlslCompletionProvider());
+    }
+
+    /** The second colon of {@code UnifiedRT::} opens the list of what the namespace declares. */
+    @Override
+    public boolean invokeAutoPopup(@NotNull PsiElement position, char typeChar) {
+        if (typeChar != ':') return false;
+        int offset = position.getTextRange().getStartOffset();
+        CharSequence text = position.getContainingFile().getViewProvider().getContents();
+        // The caret follows the first colon, which the position is or ends with.
+        int caret = position.getText().equals(":") ? position.getTextRange().getEndOffset() : offset;
+        return caret > 0 && caret <= text.length() && text.charAt(caret - 1) == ':'
+                && (caret < 2 || text.charAt(caret - 2) != ':');
     }
 
     private static class HlslCompletionProvider extends CompletionProvider<CompletionParameters> {
@@ -102,6 +115,13 @@ public class HlslCompletionContributor extends CompletionContributor {
                         element = element.withIcon(AllIcons.Nodes.Method)
                                 .withTailText("()", true)
                                 .withInsertHandler(PAREN_INSERT);
+                    } else if (member.kind() == HlslCompletionAnalysis.Kind.TYPE) {
+                        // A namespace declares structures as well, as the Hit of UnifiedRT::Hit.
+                        element = element.withIcon(AllIcons.Nodes.Class);
+                    } else if (member.kind() == HlslCompletionAnalysis.Kind.NAMESPACE) {
+                        element = element.withIcon(AllIcons.Nodes.Package);
+                    } else if (member.kind() == HlslCompletionAnalysis.Kind.VARIABLE) {
+                        element = element.withIcon(AllIcons.Nodes.Variable);
                     } else {
                         element = element.withIcon(AllIcons.Nodes.Field);
                     }
@@ -122,6 +142,8 @@ public class HlslCompletionContributor extends CompletionContributor {
                     element = element.withIcon(AllIcons.Nodes.Method).withTailText("()", true).withInsertHandler(PAREN_INSERT);
                 } else if (symbol.kind() == HlslCompletionAnalysis.Kind.TYPE) {
                     element = element.withIcon(AllIcons.Nodes.Class);
+                } else if (symbol.kind() == HlslCompletionAnalysis.Kind.NAMESPACE) {
+                    element = element.withIcon(AllIcons.Nodes.Package);
                 } else {
                     element = element.withIcon(AllIcons.Nodes.Variable);
                 }
