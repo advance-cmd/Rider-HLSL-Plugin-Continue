@@ -11,12 +11,21 @@
     ]]></description>
     <change-notes><![CDATA[
         <ul>
-            <li>Parameter info shows the methods of built-in resource types, such as both forms of
-                <code>GetDimensions</code> on a texture or <code>Append</code> on an append buffer, with the
-                element type in place of <code>T</code>. Intrinsic functions such as <code>lerp</code> and
-                <code>sincos</code> show their parameters too.</li>
-            <li>A single-line comment pasted at the end of a line of code stays on that line as a trailing comment
-                instead of moving to the next line.</li>
+            <li>Unity Unified Ray Tracing shaders (<code>.urtshader</code>) open as HLSL files, with highlighting,
+                completion, navigation and DXC checks. When another file type has the extension, as Rider's Unity
+                support does, a banner offers to open it with HLSL File.</li>
+            <li>In a Unity project, includes such as <code>Packages/com.unity.render-pipelines.core/...</code> and
+                <code>Assets/...</code> are found in the project: an embedded package first, then the downloaded
+                copy in Library/PackageCache whatever its hash. Completion, Ctrl+Click and DXC all read them, and
+                nothing is written into the project.</li>
+            <li>Names a namespace declares are completed after the namespace and <code>::</code>, as
+                <code>UnifiedRT::TraceRayClosestHit</code>. Variables of a qualified type such as
+                <code>UnifiedRT::Hit</code> complete its fields and methods, and functions declared in a namespace,
+                as well as the methods of a struct, have parameter info, hover and Ctrl+Click.</li>
+            <li>A <code>.urtshader</code> is checked the way Unity's importer builds its hardware ray tracing
+                variant: as a <code>lib_6_3</code> library with Unity's ray generation shader appended. Diagnostics
+                keep the shader's own line numbers, and the files of Unity's package cache are not checked on their
+                own.</li>
         </ul>
     ]]></change-notes>
 
